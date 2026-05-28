@@ -1,0 +1,57 @@
+.reaction-wall {
+  width: 100%;
+  max-width: 100%;
+  padding: 18px 20px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--card);
+  color: var(--card-foreground);
+  box-sizing: border-box;
+  font-family: var(--font-sans);
+}
+.reaction-wall-keys {
+  list-style: none;
+  margin: 0 0 10px;
+  padding: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+.reaction-wall-key {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 16px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--card);
+  color: var(--card-foreground);
+  font: inherit;
+  cursor: pointer;
+  transition: border-color 0.12s ease, transform 0.08s ease;
+}
+.reaction-wall-key:hover {
+  border-color: var(--accent);
+}
+.reaction-wall-key:active {
+  transform: scale(0.96);
+}
+.reaction-wall-glyph {
+  font-size: 22px;
+  line-height: 1;
+}
+.reaction-wall-count {
+  font-family: var(--font-mono);
+  font-size: 13px;
+  color: var(--muted-foreground);
+  min-width: 1.5em;
+  text-align: right;
+}
+.reaction-wall-status {
+  margin: 0;
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--muted-foreground);
+}

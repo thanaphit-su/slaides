@@ -1,0 +1,68 @@
+.word-cloud {
+  width: 100%;
+  max-width: 100%;
+  padding: 18px 20px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--card);
+  color: var(--card-foreground);
+  box-sizing: border-box;
+  font-family: var(--font-sans);
+}
+.word-cloud-prompt {
+  font-family: var(--font-serif);
+  font-size: 19px;
+  line-height: 1.35;
+  margin: 0 0 12px;
+  color: var(--card-foreground);
+}
+.word-cloud-form {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 14px;
+}
+.word-cloud-input {
+  flex: 1;
+  min-width: 0;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--card);
+  color: var(--card-foreground);
+  font: inherit;
+}
+.word-cloud-input:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+.word-cloud-submit {
+  padding: 10px 16px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--primary);
+  color: var(--primary-foreground);
+  font: inherit;
+  cursor: pointer;
+}
+.word-cloud-words {
+  list-style: none;
+  margin: 0 0 10px;
+  padding: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px 14px;
+  align-items: baseline;
+}
+.word-cloud-word {
+  font-family: var(--font-serif);
+  color: var(--card-foreground);
+  line-height: 1.15;
+}
+.word-cloud-status {
+  margin: 0;
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--muted-foreground);
+}

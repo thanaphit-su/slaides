@@ -1,18 +1,18 @@
 # SLAIDES — Functional Specification
 
-This document describes every screen and every interaction in v0.1. It is the agreement between design, frontend, and backend. Open `slaides.html` while reading this — every section maps to a visible surface.
+This document describes the implemented v0.1 product surfaces. The original prototype (`slaides.html`) remains a visual reference, but current behavior lives in `apps/web` and `apps/api`.
 
 ---
 
 ## 1. Sign-in / guest-join
 
 ### 1.1 Two-mode toggle
-Top of the right panel: segmented control with two tabs — **Sign in** (instructor) and **Join a session** (audience).
+Top of the right panel: segmented control with two tabs — **Sign in** (instructor) and **Join a session** (audience). The instructor tab has its own Sign in / Sign up subswitch.
 
 ### 1.2 Instructor sign-in
 - Fields: `email` (required), `password` (required).
-- Submit → backend issues a JWT access + refresh pair; on success, redirect to `/workspace`.
-- "Request access" link → email-based waitlist for v0.1 (no self-serve registration in v0.1).
+- Submit → Supabase Auth sign-in via the backend; on success, redirect to `/workspace`.
+- **Sign up** mode adds display name and password confirmation. Sign-up creates a pending local `app_user` profile; pending instructors can sign in but approved-only routes stay locked until an admin approves them.
 
 ### 1.3 Guest join — step A: code entry
 - Single field: `session_code` in format `SLD-XXXX-XX` (auto-uppercase, monospace).
@@ -37,7 +37,7 @@ Top of the right panel: segmented control with two tabs — **Sign in** (instruc
 The page an instructor lands on after sign-in.
 
 ### 2.1 Top nav (sticky)
-- Wordmark · tabs (`Decks` | `Widgets` | `Sessions`).
+- Wordmark · tabs (`Decks` | `Sessions`). Widgets are deck-local and managed from the editor sidebar.
 - Right side: search input (⌘K to focus), settings gear, avatar (click = sign-out menu).
 
 ### 2.2 Hero strip
@@ -46,7 +46,7 @@ The page an instructor lands on after sign-in.
 - Short lede.
 
 ### 2.3 Action row
-- Primary buttons: `+ New deck`, `Import…` (accepts `.slaides` zip), `Widget collection`.
+- Primary buttons: `+ New deck`, `Import…` (accepts `.slaides` zip). Widget collection is available inside the editor for each deck.
 - Right side: deck count, grid / list view toggle.
 
 ### 2.4 Deck grid (default view)
@@ -100,15 +100,13 @@ A slide may have at most one widget. The UI enforces this in three places:
 
 ### 3.4 Right sidebar — Widgets (persistent, collapsible)
 - **Collapsed state:** Floating "WIDGETS" pill (31×115 px, rounded left edge, `border-radius: 8px 0 0 8px`, drop shadow biased left)
-- **Expanded state:** 400-450px wide panel with three tabs
+- **Expanded state:** 400-450px wide panel with mode-specific chat, props, code, and library controls
 - **Header:** Mono breadcrumb "WIDGETS · NN" (slide number) + collapse button (X icon)
 - **Behavior:** Clicking active icon collapses; clicking inactive expands
 - VSCode-style icon rail on left (sections / widgets / theme), flex-fill content panel on right
-- **Tabs:**
-  1. **My Library:** "This deck" section + "Other decks" collapsible cross-deck picker
-  2. **AI Adjust:** Chat interface when widget selected (3.11)
-  3. **Code:** HTML/JS/CSS editors with explicit Save button (bottom-right)
-- **Drag-to-insert:** Widget cards are draggable; drop on slide canvas inserts widget
+- **Create mode:** Generate-with-AI chat is the main panel; the deck-local library opens from the toolbar as a popover, with a "Copy from another deck" section for explicit cross-deck copies.
+- **Adjust mode:** Generate/AI Adjust chat remains the main panel for the selected placement; widgets with props also expose a Props tab, and every selected widget exposes a Code tab with HTML/JS/CSS editors and explicit Save.
+- **Drag-to-insert:** Deck-local widget cards and copied cross-deck candidates can be inserted into the active slide through the caller-supplied pick/drop path.
 
 ### 3.5 Bottom stepper (48px, sticky)
 - `Prev` ◀ — pip rail (24px per slide, active is solid ink) — slide counter `N / total` — `Next` ▶.
@@ -156,11 +154,12 @@ A single context menu surfaces on right-click anywhere in the canvas.
 - When done: serif response, plus `Copy` and `Insert below` actions.
 
 ### 3.8 Generate with AI — Sidebar chat (not modal)
-- **Location:** Widget collection sidebar, "Generate with AI" tab
+- **Location:** Widget sidebar. In create mode this is the default panel; in adjust mode it becomes the AI Adjust chat for the selected widget.
 - Chat composer with:
   - Textarea for prompt (⏎ to send, Shift+⏎ for newline)
   - Optional image attachment (+ button, shown if model supports images)
-  - Quiet/Loud behavior picker (sun-icon popover, or AI clarification questions)
+  - Workflow mode menu: "Build now" or "Clarify first"
+  - Quiet/Loud behavior is chosen by AI workflow clarification questions rendered as option chips when needed; create mode does not expose a manual behavior picker.
 - **Streaming during generation:**
   - Animated typing dots + "Waiting for the model to start…"
   - Live character counter (switches to KB past 1KB)
@@ -227,9 +226,8 @@ A single context menu surfaces on right-click anywhere in the canvas.
 
 **Behavior Changes:**
 - AI Adjust can swap widget behavior in either direction (Quiet ↔ Loud)
-- Adjust mode PATCH only sends changed fields (name, description, html, js, css, props_schema, tags)
-- Never sends `behavior` or `kind` in adjust mode PATCH
-- Backend guard refuses behavior write when open `placement_state` exists (live session)
+- Adjust mode PATCH sends only draft fields that changed, including `kind` or `behavior` when the AI intentionally changes them
+- Backend guard returns `409 edit_requires_reset` when an edit affects open `placement_state`; confirming resets the current audience aggregate and applies the edit
 
 **Manual Source Editing:**
 - Code tab shows HTML/JS/CSS editors
@@ -332,7 +330,7 @@ Right drawer, 420px. Four tabs:
 
 ### 6.1 Session
 - **Publish & start a session** — primary CTA that begins a new session.
-- **Recordings & transcripts** — toggles: Save transcripts (on), Allow anonymous join (on), Show audience count to room (off).
+- **Recordings & transcripts** — explanatory block only in current v0.1 UI. Transcript toggles are M5; interaction logs are already captured for live sessions.
 - **Deck access** — read-only sharable link, `Copy link` and `Export .slaides` buttons.
 
 ### 6.2 LLM — Multi-model configuration
@@ -360,8 +358,7 @@ Right drawer, 420px. Four tabs:
 - Calls logged with prompt hash (not raw text) for cost tracking
 
 ### 6.3 Display
-- Dark mode toggle.
-- Editor density: Comfortable / Compact / Reading.
+- Current UI shows this as later-release work. Dark mode and editor density persistence are not implemented yet.
 
 ### 6.4 Account
 - Avatar + name + email.
@@ -375,17 +372,17 @@ Right drawer, 420px. Four tabs:
 
 **Note:** Workspace-level "Widgets" tab was removed in Widgets v2. Widgets are deck-local; cross-deck reuse goes through explicit copy.
 
-### 7.1 Tabs
-- `My Library`: Deck-local widgets + cross-deck picker
-- `AI Adjust`: Chat interface for selected widget (3.11)
-- `Code`: HTML/JS/CSS editors with explicit Save
+### 7.1 Panels and popovers
+- Create mode: Generate-with-AI chat with optional image attachment and workflow mode menu.
+- Library popover: deck-local widgets plus "Copy from another deck"; same-deck duplicate and delete actions are icon buttons per row.
+- Adjust mode: AI Adjust chat for the selected widget.
+- Props tab: shown when the selected widget has `props_schema` fields.
+- Code tab: HTML/JS/CSS editors with explicit Save.
 
-### 7.2 Library cards
-- Thumbnail preview (sandboxed iframe with host theme tokens)
-- Name · version chip · description · tag chips
-- Draggable (`application/x-slaides-widget` dataTransfer)
-- Hover/focus-only icon-only actions: Adjust, Remove
-- "OTHER DECK" pill badge for cross-deck widgets
+### 7.2 Library rows and previews
+- Deck-local library rows show name, description/kind, duplicate, and delete actions.
+- Cross-deck reuse goes through the copy picker; copying creates an independent widget in the current deck before insertion.
+- Widget thumbnails/previews use sandboxed iframes with host theme tokens where rendered.
 
 ### 7.3 Widget Behavior Contract (Widgets v2)
 
@@ -421,11 +418,11 @@ Right drawer, 420px. Four tabs:
 - Hover darkens border.
 - Click → insert into the active slide (caller-supplied callback).
 
-### 7.3 Generate flow
-- Textarea, hints under it (sandbox + bridge explanation).
-- `Generate widget` button + `Import .swidget` button.
-- Drafting state: shimmer block.
-- Ready: title + description summary + actions (insert / edit code / save to library).
+### 7.4 Generate flow
+- Textarea, optional image attachment, workflow mode menu, and recent prompt shortcuts.
+- `Build now` drafts when the model has enough information; `Clarify first` asks one useful question before drafting.
+- Drafting state shows typing dots, live character count, and a stream-tail preview.
+- Ready state shows a preview card with insert/save actions and non-blocking validator warnings.
 
 ---
 
@@ -443,15 +440,15 @@ A deck file is a single `deck.json` manifest + N markdown files in `slides/`. Th
 | `> quote` | Blockquote |
 | `---` | Horizontal rule |
 | `[label](url)` | Inline link |
-| `{{widget:ID}}` | Widget placeholder. Renders the widget with that id |
+| `{{widget:ID}}` | Widget placeholder. Renders the widget placement with that id |
 
-Lists, tables, images, footnotes, and code blocks are **out of scope for v0.1**; track in the backlog.
+Unordered lists, ordered lists, markdown tables, and safe links are implemented. Images, footnotes, and fenced code blocks remain out of scope for v0.1.
 
 ---
 
 ## 9. Widget contract (the iframe protocol)
 
-Every widget is an isolated HTML document loaded into an iframe with `sandbox="allow-scripts"` and `srcdoc=<the widget HTML>`. The widget cannot reach the deck DOM. The host injects a tiny bridge before the widget script runs:
+Every widget is an isolated HTML document loaded into an iframe with `sandbox="allow-scripts allow-forms"` and `srcdoc=<the widget HTML>`. The widget cannot reach the deck DOM or parent storage because it has a sandbox-null origin. The host injects a tiny bridge before the widget script runs:
 
 ```js
 window.slaides = {
@@ -459,6 +456,9 @@ window.slaides = {
   on(event, cb),              // ← host, e.g. on('presenter:advance', cb)
   setState(key, value),       // persist widget state (per participant for audience-mode)
   getState(key),              // read it back
+  contribute(value),          // Loud widgets → host/server aggregation
+  props,                      // placement-specific props, baked into srcdoc before widget JS
+  behavior,                   // {kind:'quiet'} or {kind:'loud', aggregator, contribution_schema}
   role,                       // 'instructor' | 'audience' | 'preview'
   participant: { id, anon },  // never raw email
   api: {
@@ -467,31 +467,42 @@ window.slaides = {
 }
 ```
 
-Allowed widget output: any HTML/CSS/JS inside the sandbox. Allowed UI framework: vanilla DOM, or Preact via CDN (the only framework the host whitelists in v0.1).
+Allowed widget output: self-contained HTML/CSS/JS inside the sandbox. Current AI-generated/starter widgets are vanilla DOM; remote scripts and stylesheets are rejected by the widget-generation contract and blocked by the srcdoc CSP. Images may load from `data:` or `https:` URLs.
 
 ---
 
 ## 10. Realtime events (WebSocket)
 
-One channel per session: `wss://api.slaides.app/sessions/:id/ws`. JSON messages with a discriminating `type`.
+One channel per session: `/ws/sessions/:id?token=...`. JSON messages use a discriminating `type`.
 
-**Host → participants:**
+**Server → clients:**
 - `session.state` (initial snapshot)
-- `slide.changed { idx, slide_id }`
-- `widget.inserted { slide_id, widget_id, spec, transient: bool }`
-- `widget.update { widget_id, state }`
+- `slide.changed { slide_id, is_session_slide }`
+- `session_slide.inserted { id, kind, spec, results, ... }`
+- `session.ended {}`
+- `interaction.tally { session_slide_id, results, spec_state? }`
+- `interaction_spec.updated { session_slide_id, spec }`
+- `interaction_results.updated { session_slide_id, results }`
+- `question_answer.new { session_slide_id, answer }`
+- `widget.state { placement_id, widget_id?, state, state_version, contribution_count }`
+- `widget.reset { placement_id, widget_id?, state, state_version, contribution_count }`
+- `question.new { id, text, ... }`
 - `question.answered { question_id }`
+- `participant.joined` / `participant.left`
 
-**Participants → host:**
+**Client → server:**
 - `participant.joined`
 - `participant.left`
-- `interaction.vote { widget_id, choice }`
-- `interaction.text { widget_id, text }`
-- `interaction.slider { widget_id, value }`
+- `interaction.vote { session_slide_id, choice }`
+- `interaction.text { session_slide_id, text }`
+- `interaction.slider { session_slide_id, value }`
+- `widget.contribute { placement_id, value }`
 - `interaction.interpret { selection, prompt }`
 - `question.raise { text, anonymous }`
+- `question.answered { question_id }`
+- `widget.update { ... }` (legacy relay path)
 
-Every event is appended to the session's interaction log table.
+Audience contribution events are appended to `interaction_log`. Server broadcasts also update `session_slide.results` or `placement_state` so late joiners receive the current state in `session.state`.
 
 ---
 

@@ -1,0 +1,75 @@
+# OS/editor noise
+.DS_Store
+Thumbs.db
+*.swp
+*.swo
+*.tmp
+*.bak
+*.orig
+.vscode/
+.idea/
+
+# Local agent/tool state
+.antigravity/
+.claude/
+.codex/
+.gemini/
+
+# Environment and secrets
+.env
+.env.*
+!.env.example
+!**/.env.example
+
+# Logs
+*.log
+logs/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# Node/Vite
+node_modules/
+**/node_modules/
+.npm-cache/
+dist/
+build/
+.vite/
+coverage/
+playwright-report/
+test-results/
+*.tsbuildinfo
+
+# Python
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+.coverage.*
+htmlcov/
+.hypothesis/
+*.egg-info/
+
+# Generated evaluation output
+apps/api/scripts/eval_reports/
+
+# Supabase local runtime state
+supabase/.branches/
+supabase/.temp/
+supabase/volumes/
+docker/supabase/.env
+docker/supabase/.env.*
+!docker/supabase/.env.example
+docker/supabase/volumes/
+docker/supabase/test.http
+docker/supabase/docker-compose.override.yml
+
+# Runtime/generated local assets
+uploads/
+scraps/
+.design-canvas.state.json

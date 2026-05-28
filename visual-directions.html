@@ -1,0 +1,693 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<title>SLAIDES — visual directions</title>
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,300..800;1,9..144,300..800&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&family=Newsreader:ital,opsz,wght@0,6..72,300..800;1,6..72,300..800&family=Inter:wght@400;500;600;700&family=Instrument+Serif:ital@0;1&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
+<style>
+  html, body { margin:0; padding:0; background:#1a1816; }
+  body { font-family: 'IBM Plex Sans', system-ui, sans-serif; }
+
+  /* ============ shared artboard reset ============ */
+  .ab { box-sizing:border-box; overflow:hidden; position:relative; }
+  .ab * { box-sizing:border-box; }
+
+  /* ============ DIRECTION A — FIELD NOTES ============ */
+  .dA {
+    --ink: #1a1612;
+    --ink-soft: #3a342c;
+    --paper: #f6f1e6;
+    --paper-2: #ede6d4;
+    --rule: #d9cfb8;
+    --rule-soft: #e7dfc9;
+    --accent: #b4502b;       /* terracotta */
+    --accent-deep: #8c3a1c;
+    --serif: 'Fraunces', 'Newsreader', Georgia, serif;
+    --sans: 'IBM Plex Sans', system-ui, sans-serif;
+    --mono: 'IBM Plex Mono', ui-monospace, monospace;
+    background: var(--paper);
+    color: var(--ink);
+    font-family: var(--sans);
+  }
+  .dA .grain {
+    position:absolute; inset:0; pointer-events:none; opacity:.5;
+    background-image:
+      radial-gradient(circle at 18% 22%, rgba(180,80,43,.10) 0 1px, transparent 2px),
+      radial-gradient(circle at 78% 64%, rgba(26,22,18,.08) 0 1px, transparent 2px),
+      radial-gradient(circle at 44% 88%, rgba(180,80,43,.08) 0 1px, transparent 2px);
+    background-size: 220px 220px, 180px 180px, 260px 260px;
+    mix-blend-mode: multiply;
+  }
+  .dA .marg {
+    position:absolute; top:24px; left:24px;
+    font-family: var(--mono); font-size:11px; color: var(--ink-soft);
+    letter-spacing:.04em; text-transform:uppercase;
+  }
+  .dA .marg .dot { display:inline-block; width:6px; height:6px; background:var(--accent); border-radius:50%; margin-right:8px; vertical-align:1px; }
+  .dA .pageno { position:absolute; top:24px; right:24px; font-family:var(--mono); font-size:11px; color:var(--ink-soft); }
+  .dA h1.display {
+    font-family: var(--serif); font-weight:500; font-size:64px; line-height:1.02;
+    letter-spacing:-0.02em; margin:0; color: var(--ink);
+  }
+  .dA h1.display em { font-style:italic; color:var(--accent-deep); font-weight:400; }
+  .dA .lede { font-family:var(--serif); font-weight:400; font-size:18px; line-height:1.55; color:var(--ink-soft); max-width: 50ch; }
+  .dA .meta { font-family:var(--mono); font-size:11px; text-transform:uppercase; letter-spacing:.08em; color:var(--ink-soft); display:flex; gap:18px; }
+  .dA .meta b { color: var(--accent-deep); font-weight:500; }
+  .dA .stepper { display:flex; align-items:center; gap:6px; font-family:var(--mono); font-size:11px; color:var(--ink-soft); }
+  .dA .stepper .pip { width:6px; height:6px; border-radius:50%; background:var(--rule); }
+  .dA .stepper .pip.on { background:var(--accent); }
+
+  /* ============ DIRECTION B — EDITORIAL PRESS ============ */
+  .dB {
+    --ink: #0b0d10;
+    --ink-soft: #4b525b;
+    --paper: #ffffff;
+    --paper-2: #f5f4f1;
+    --rule: #e3e1dc;
+    --rule-soft: #ecebe6;
+    --accent: #1f3a8a;     /* deep ink-blue */
+    --accent-2: #c2410c;   /* warm secondary */
+    --serif: 'Newsreader', 'Fraunces', Georgia, serif;
+    --sans: 'Inter', system-ui, sans-serif;
+    --mono: 'IBM Plex Mono', ui-monospace, monospace;
+    background: var(--paper);
+    color: var(--ink);
+    font-family: var(--sans);
+  }
+  .dB h1.display {
+    font-family: var(--serif); font-weight:400; font-size:68px; line-height:1.04;
+    letter-spacing:-0.025em; margin:0; color: var(--ink);
+  }
+  .dB h1.display em { font-style:italic; font-weight:300; }
+  .dB .rule { height:1px; background: var(--ink); width:48px; }
+  .dB .kicker { font-family:var(--sans); font-size:11px; text-transform:uppercase; letter-spacing:.18em; font-weight:600; color:var(--accent); }
+  .dB .lede { font-family:var(--serif); font-weight:300; font-size:18px; line-height:1.6; color:var(--ink-soft); max-width: 56ch; }
+  .dB .meta { font-family:var(--sans); font-size:12px; color:var(--ink-soft); display:flex; gap:20px; }
+  .dB .meta b { color: var(--ink); font-weight:600; }
+
+  /* ============ DIRECTION C — RISO STUDIO ============ */
+  .dC {
+    --ink: #1c1a17;
+    --ink-soft: #5b554b;
+    --paper: #f1ead8;
+    --paper-2: #e6dcc1;
+    --clay: #d34a2a;
+    --clay-2: rgba(211,74,42,.55);
+    --teal: #1d6680;
+    --teal-2: rgba(29,102,128,.50);
+    --rule: #cfc4a4;
+    --serif: 'Instrument Serif', 'Fraunces', Georgia, serif;
+    --sans: 'IBM Plex Sans', system-ui, sans-serif;
+    --mono: 'JetBrains Mono', ui-monospace, monospace;
+    background: var(--paper);
+    color: var(--ink);
+    font-family: var(--sans);
+    position:relative;
+  }
+  .dC .halftone {
+    position:absolute; inset:0; pointer-events:none; opacity:.45;
+    background-image: radial-gradient(rgba(211,74,42,.55) 1.1px, transparent 1.4px);
+    background-size: 7px 7px;
+    -webkit-mask-image: radial-gradient(ellipse at 30% 10%, black 0%, transparent 65%);
+            mask-image: radial-gradient(ellipse at 30% 10%, black 0%, transparent 65%);
+  }
+  .dC .halftone.teal {
+    background-image: radial-gradient(rgba(29,102,128,.55) 1.1px, transparent 1.4px);
+    -webkit-mask-image: radial-gradient(ellipse at 80% 90%, black 0%, transparent 60%);
+            mask-image: radial-gradient(ellipse at 80% 90%, black 0%, transparent 60%);
+  }
+  .dC h1.display {
+    font-family: var(--serif); font-weight:400; font-size:78px; line-height:0.98;
+    letter-spacing:-0.01em; margin:0; color: var(--ink);
+  }
+  .dC h1.display em { font-style:italic; color:var(--clay); }
+  .dC .stamp {
+    display:inline-flex; align-items:center; gap:8px; font-family:var(--mono); font-size:11px;
+    text-transform:uppercase; letter-spacing:.1em; color:var(--clay); border:1px solid var(--clay);
+    padding:4px 10px; border-radius:999px;
+  }
+  .dC .lede { font-family:var(--serif); font-weight:400; font-size:20px; line-height:1.5; color:var(--ink-soft); max-width: 48ch; }
+  .dC .meta { font-family:var(--mono); font-size:11px; text-transform:uppercase; letter-spacing:.08em; color:var(--ink-soft); display:flex; gap:18px; }
+
+  /* ============ COMMON UI PIECES (instructor + audience widgets) ============ */
+  .panel { border-radius:14px; padding:18px; }
+
+  .keycap { font-family: var(--mono, 'IBM Plex Mono'); font-size:10px; padding:2px 6px; border-radius:4px; border:1px solid currentColor; opacity:.7; }
+
+  .swatch { width:42px; height:42px; border-radius:10px; }
+  .swatch.sm { width:28px; height:28px; border-radius:8px; }
+
+  /* tiny chart for sample slide */
+  .chartA path { stroke: var(--accent); }
+  .chartB path { stroke: var(--accent); }
+  .chartC path { stroke: var(--clay); }
+
+  /* wordmark */
+  .wm { letter-spacing:.18em; font-weight:600; }
+
+  /* Editor-snippet shared */
+  .ed-line { height:8px; border-radius:3px; }
+  .ed-h    { height:14px; border-radius:4px; }
+
+  /* sticky highlight selection */
+  .sel { background: rgba(180,80,43,.18); padding:0 2px; border-radius:2px; }
+  .selB { background: rgba(31,58,138,.13); padding:0 2px; border-radius:2px; }
+  .selC { background: rgba(211,74,42,.20); padding:0 2px; border-radius:2px; }
+
+</style>
+</head>
+<body>
+
+<script src="https://unpkg.com/react@18.3.1/umd/react.development.js" integrity="sha384-hD6/rw4ppMLGNu3tX5cjIb+uRZ7UkRJ6BPkLpg4hAu/6onKUg4lLsHAs9EBPT82L" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js" integrity="sha384-u6aeetuaXnQ38mYT8rp6sbXaQe3NL9t+IBXmnYxwkUI2Hw4bsp2Wvmx4yRQF1uAm" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js" integrity="sha384-m08KidiNqLdpJqLq95G/LEi8Qvjl/xUYll3QILypMoQ65QorJ9Lvtp2RXYGBFj1y" crossorigin="anonymous"></script>
+<script type="text/babel" src="design-canvas.jsx"></script>
+
+<div id="root"></div>
+
+<script type="text/babel" data-presets="react">
+const { useEffect } = React;
+
+/* ---------- Direction A : Field Notes ---------- */
+function SlideA() {
+  return (
+    <div className="ab dA" style={{width:980, height:620, padding:'56px 64px'}}>
+      <div className="grain" />
+      <div className="marg"><span className="dot"></span>Field Notes · Lesson 02</div>
+      <div className="pageno">§ 02 · pp. 14</div>
+
+      {/* scattered dots */}
+      <span style={{position:'absolute', top:120, right:90,  width:7, height:7, borderRadius:'50%', background:'#b4502b'}}></span>
+      <span style={{position:'absolute', top:200, right:160, width:5, height:5, borderRadius:'50%', background:'#6b8e4e'}}></span>
+      <span style={{position:'absolute', top:300, right:60,  width:9, height:9, borderRadius:'50%', background:'#c8a14a'}}></span>
+      <span style={{position:'absolute', bottom:140, left:120, width:5, height:5, borderRadius:'50%', background:'#4a6b8e'}}></span>
+
+      <div style={{display:'flex', flexDirection:'column', gap:28, marginTop:120, maxWidth:760}}>
+        <div className="meta"><span>15 min read</span><span>4 interactives</span><b>some calculus, mostly intuition</b></div>
+        <h1 className="display">A line is the smallest possible <em>brain</em> you can build.</h1>
+        <p className="lede">Before transformers, before attention, before billion‑parameter language models — there was a line. Drawing it well is the entire game.</p>
+      </div>
+
+      <div style={{position:'absolute', left:64, bottom:36, display:'flex', alignItems:'center', gap:14, fontFamily:'IBM Plex Mono', fontSize:11, color:'#3a342c'}}>
+        <span style={{textTransform:'uppercase', letterSpacing:'.08em'}}>v 0.1</span>
+        <span>·</span>
+        <span>◐ dark mode</span>
+      </div>
+      <div className="stepper" style={{position:'absolute', right:64, bottom:36}}>
+        <span>‹ prev</span>
+        <span style={{margin:'0 12px', display:'inline-flex', gap:6}}>
+          <span className="pip on"></span><span className="pip on"></span><span className="pip"></span><span className="pip"></span><span className="pip"></span>
+        </span>
+        <span>next ›</span>
+      </div>
+    </div>
+  );
+}
+
+function EditorA() {
+  return (
+    <div className="ab dA" style={{width:520, height:380, padding:0}}>
+      <div style={{display:'grid', gridTemplateColumns:'180px 1fr', height:'100%'}}>
+        <aside style={{background:'#efe7d3', borderRight:'1px solid var(--rule)', padding:'18px 14px', fontSize:12}}>
+          <div style={{fontFamily:'IBM Plex Mono', fontSize:10, textTransform:'uppercase', letterSpacing:'.1em', color:'var(--ink-soft)', marginBottom:14}}>Foundations</div>
+          <div style={{display:'flex', flexDirection:'column', gap:8, fontFamily:'var(--serif)'}}>
+            <div style={{fontStyle:'italic', color:'var(--accent-deep)'}}>▾ 01 · Simple Linear</div>
+            <div style={{paddingLeft:14, color:'var(--ink-soft)'}}>What is a model?</div>
+            <div style={{paddingLeft:14, color:'var(--ink)', fontWeight:500}}>What is a function?</div>
+            <div style={{paddingLeft:14, color:'var(--ink-soft)'}}>Drawing a line</div>
+            <div style={{paddingLeft:14, color:'var(--ink-soft)'}}>Measuring error</div>
+            <div style={{paddingLeft:14, color:'var(--ink-soft)'}}>Gradient descent</div>
+          </div>
+        </aside>
+        <main style={{padding:'20px 22px'}}>
+          <div style={{fontFamily:'var(--serif)', fontSize:22, fontWeight:500, letterSpacing:'-0.01em', marginBottom:14}}>
+            What even <em style={{color:'var(--accent-deep)'}}>is</em> a function?
+          </div>
+          <div style={{display:'flex', flexDirection:'column', gap:9}}>
+            <div className="ed-line" style={{background:'#e3d9bd', width:'92%'}}></div>
+            <div className="ed-line" style={{background:'#e3d9bd', width:'85%'}}></div>
+            <div className="ed-line" style={{background:'#e3d9bd', width:'70%'}}></div>
+            <div className="ed-line" style={{background:'rgba(180,80,43,.25)', width:'55%'}}></div>
+            <div className="ed-line" style={{background:'#e3d9bd', width:'88%'}}></div>
+          </div>
+          <div style={{marginTop:18, padding:10, border:'1px dashed var(--accent)', borderRadius:8, fontFamily:'var(--mono)', fontSize:11, color:'var(--accent-deep)'}}>
+            ✎ /interpret · "in plain English"
+          </div>
+        </main>
+      </div>
+    </div>
+  );
+}
+
+function PaletteA() {
+  const swatches = [
+    ['#f6f1e6','paper'],
+    ['#ede6d4','paper 2'],
+    ['#1a1612','ink'],
+    ['#b4502b','terracotta'],
+    ['#8c3a1c','clay'],
+    ['#6b8e4e','olive'],
+    ['#c8a14a','ochre'],
+    ['#4a6b8e','indigo'],
+  ];
+  return (
+    <div className="ab dA" style={{width:520, height:380, padding:28}}>
+      <div style={{display:'flex', alignItems:'baseline', justifyContent:'space-between', marginBottom:16}}>
+        <div className="wm" style={{fontFamily:'var(--serif)', fontSize:28, fontWeight:600, letterSpacing:'.22em'}}>SLAIDES</div>
+        <div style={{fontFamily:'var(--mono)', fontSize:11, color:'var(--ink-soft)'}}>direction · A</div>
+      </div>
+      <div style={{fontFamily:'var(--serif)', fontStyle:'italic', fontSize:18, color:'var(--ink-soft)', marginBottom:18}}>
+        a journal you can teach <em style={{color:'var(--accent-deep)'}}>from</em>.
+      </div>
+
+      <div style={{display:'grid', gridTemplateColumns:'repeat(8, 1fr)', gap:8, marginBottom:18}}>
+        {swatches.map(([c,name],i) => (
+          <div key={i} style={{display:'flex', flexDirection:'column', gap:6}}>
+            <div className="swatch sm" style={{background:c, border:'1px solid rgba(0,0,0,.06)'}}></div>
+            <div style={{fontFamily:'var(--mono)', fontSize:9, color:'var(--ink-soft)', textTransform:'uppercase', letterSpacing:'.06em'}}>{name}</div>
+          </div>
+        ))}
+      </div>
+
+      <div style={{borderTop:'1px solid var(--rule-soft)', paddingTop:14, display:'flex', gap:18}}>
+        <div>
+          <div style={{fontFamily:'var(--serif)', fontSize:24, lineHeight:1, letterSpacing:'-0.01em'}}>Fraunces</div>
+          <div style={{fontFamily:'var(--mono)', fontSize:10, color:'var(--ink-soft)', marginTop:6}}>display · variable serif</div>
+        </div>
+        <div>
+          <div style={{fontFamily:'var(--sans)', fontSize:16, fontWeight:500}}>IBM Plex Sans</div>
+          <div style={{fontFamily:'var(--mono)', fontSize:10, color:'var(--ink-soft)', marginTop:6}}>ui chrome</div>
+        </div>
+        <div>
+          <div style={{fontFamily:'var(--mono)', fontSize:14}}>Plex Mono</div>
+          <div style={{fontFamily:'var(--mono)', fontSize:10, color:'var(--ink-soft)', marginTop:6}}>meta · numerals</div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function AudienceA() {
+  return (
+    <div className="ab dA" style={{width:300, height:560, padding:'18px 16px', borderRadius:28, border:'8px solid #1a1612'}}>
+      <div className="grain" />
+      <div style={{display:'flex', justifyContent:'space-between', alignItems:'center', fontFamily:'var(--mono)', fontSize:10, color:'var(--ink-soft)'}}>
+        <span>SLAIDES · live</span>
+        <span style={{display:'inline-flex', alignItems:'center', gap:5}}>
+          <span style={{width:6,height:6,borderRadius:'50%',background:'#b4502b'}}></span> on air
+        </span>
+      </div>
+      <div style={{marginTop:18}}>
+        <div style={{fontFamily:'var(--mono)', fontSize:10, textTransform:'uppercase', letterSpacing:'.1em', color:'var(--ink-soft)'}}>poll · slide 02</div>
+        <div style={{fontFamily:'var(--serif)', fontSize:22, lineHeight:1.15, letterSpacing:'-0.01em', margin:'6px 0 16px'}}>
+          Which describes a <em style={{color:'var(--accent-deep)'}}>function</em> best?
+        </div>
+        <div style={{display:'flex', flexDirection:'column', gap:8}}>
+          {['A box that maps inputs to outputs','A rule with one answer per input','A formula like y = mx + b','A graph drawn on paper'].map((t,i)=>(
+            <div key={i} style={{
+              border:'1px solid var(--rule)', borderRadius:10, padding:'10px 12px',
+              background: i===1 ? 'rgba(180,80,43,.10)' : 'transparent',
+              borderColor: i===1 ? 'var(--accent)' : 'var(--rule)',
+              fontFamily:'var(--serif)', fontSize:14, color:'var(--ink)'
+            }}>
+              <span style={{fontFamily:'var(--mono)', fontSize:10, color:'var(--ink-soft)', marginRight:8}}>{String.fromCharCode(65+i)}</span>{t}
+            </div>
+          ))}
+        </div>
+      </div>
+      <div style={{position:'absolute', left:16, right:16, bottom:18, display:'flex', gap:8}}>
+        <button style={{flex:1, padding:'12px 0', borderRadius:10, border:'1px solid var(--ink)', background:'var(--ink)', color:'var(--paper)', fontFamily:'var(--sans)', fontSize:13, fontWeight:500}}>Submit</button>
+        <button style={{flex:0.6, padding:'12px 0', borderRadius:10, border:'1px solid var(--rule)', background:'transparent', color:'var(--ink-soft)', fontFamily:'var(--sans)', fontSize:12}}>✋ Raise</button>
+      </div>
+    </div>
+  );
+}
+
+/* ---------- Direction B : Editorial Press ---------- */
+function SlideB() {
+  return (
+    <div className="ab dB" style={{width:980, height:620, padding:'72px 88px'}}>
+      <div style={{position:'absolute', top:28, left:28, right:28, display:'flex', justifyContent:'space-between', fontFamily:'var(--sans)', fontSize:11, color:'var(--ink-soft)', letterSpacing:'.08em', textTransform:'uppercase'}}>
+        <span>SLAIDES · Field Notes</span>
+        <span>02 / 24</span>
+      </div>
+      <div style={{display:'flex', flexDirection:'column', gap:24, marginTop:80, maxWidth:760}}>
+        <div className="kicker">Lesson Two — The Atom of Every Neural Net</div>
+        <div className="rule"></div>
+        <h1 className="display">A line is the smallest possible <em>brain</em> you can build.</h1>
+        <p className="lede">Before transformers, before attention, before billion‑parameter language models — there was a line. Drawing it well is the entire game.</p>
+        <div className="meta"><b>15 min read</b><span>4 interactives</span><span>some calculus, mostly intuition</span></div>
+      </div>
+      <div style={{position:'absolute', left:88, bottom:36, fontFamily:'var(--sans)', fontSize:12, color:'var(--ink-soft)'}}>◐ Dark mode</div>
+      <div style={{position:'absolute', right:88, bottom:36, fontFamily:'var(--sans)', fontSize:12, color:'var(--ink-soft)', display:'flex', alignItems:'center', gap:10}}>
+        <span>‹ Prev</span>
+        <span style={{display:'inline-flex', gap:4}}>
+          <span style={{width:14, height:2, background:'var(--ink)'}}></span>
+          <span style={{width:14, height:2, background:'var(--rule)'}}></span>
+          <span style={{width:14, height:2, background:'var(--rule)'}}></span>
+          <span style={{width:14, height:2, background:'var(--rule)'}}></span>
+        </span>
+        <span>Next ›</span>
+      </div>
+    </div>
+  );
+}
+
+function EditorB() {
+  return (
+    <div className="ab dB" style={{width:520, height:380, padding:0, border:'1px solid var(--rule)'}}>
+      <div style={{display:'grid', gridTemplateColumns:'180px 1fr', height:'100%'}}>
+        <aside style={{background:'var(--paper-2)', borderRight:'1px solid var(--rule)', padding:'18px 14px'}}>
+          <div style={{fontFamily:'var(--sans)', fontSize:10, textTransform:'uppercase', letterSpacing:'.16em', color:'var(--ink-soft)', marginBottom:14, fontWeight:600}}>FOUNDATIONS</div>
+          <div style={{display:'flex', flexDirection:'column', gap:8, fontFamily:'var(--sans)', fontSize:13}}>
+            <div style={{fontWeight:600, color:'var(--accent)'}}>▾ 01 Simple Linear</div>
+            <div style={{paddingLeft:14, color:'var(--ink-soft)'}}>What is a model?</div>
+            <div style={{paddingLeft:14, color:'var(--ink)', fontWeight:600, borderLeft:'2px solid var(--ink)', marginLeft:-8, paddingLeftAlt:16}}>&nbsp;What is a function?</div>
+            <div style={{paddingLeft:14, color:'var(--ink-soft)'}}>Drawing a line</div>
+            <div style={{paddingLeft:14, color:'var(--ink-soft)'}}>Measuring error</div>
+            <div style={{paddingLeft:14, color:'var(--ink-soft)'}}>Gradient descent</div>
+          </div>
+        </aside>
+        <main style={{padding:'20px 24px'}}>
+          <div style={{fontFamily:'var(--serif)', fontSize:24, fontWeight:400, letterSpacing:'-0.02em', marginBottom:14}}>
+            What even <em>is</em> a function?
+          </div>
+          <div style={{display:'flex', flexDirection:'column', gap:9}}>
+            <div className="ed-line" style={{background:'var(--rule-soft)', width:'94%'}}></div>
+            <div className="ed-line" style={{background:'var(--rule-soft)', width:'80%'}}></div>
+            <div className="ed-line" style={{background:'var(--rule-soft)', width:'72%'}}></div>
+            <div className="ed-line" style={{background:'rgba(31,58,138,.20)', width:'50%'}}></div>
+            <div className="ed-line" style={{background:'var(--rule-soft)', width:'88%'}}></div>
+          </div>
+          <div style={{marginTop:18, padding:'10px 12px', border:'1px solid var(--accent)', borderRadius:6, fontFamily:'var(--sans)', fontSize:12, color:'var(--accent)', display:'flex', justifyContent:'space-between'}}>
+            <span>Interpret · "in plain English"</span><span style={{fontFamily:'var(--mono)'}}>↵</span>
+          </div>
+        </main>
+      </div>
+    </div>
+  );
+}
+
+function PaletteB() {
+  const swatches = [
+    ['#ffffff','paper'],
+    ['#f5f4f1','paper 2'],
+    ['#0b0d10','ink'],
+    ['#4b525b','slate'],
+    ['#1f3a8a','ink-blue'],
+    ['#c2410c','amber'],
+    ['#117a45','meadow'],
+    ['#e3e1dc','rule'],
+  ];
+  return (
+    <div className="ab dB" style={{width:520, height:380, padding:28, border:'1px solid var(--rule)'}}>
+      <div style={{display:'flex', alignItems:'baseline', justifyContent:'space-between', marginBottom:6}}>
+        <div className="wm" style={{fontFamily:'var(--serif)', fontSize:30, fontWeight:400, letterSpacing:'.18em'}}>SLAIDES</div>
+        <div style={{fontFamily:'var(--sans)', fontSize:11, color:'var(--ink-soft)', textTransform:'uppercase', letterSpacing:'.1em'}}>direction · B</div>
+      </div>
+      <div className="rule" style={{height:1, background:'var(--ink)', width:48, margin:'12px 0 14px'}}></div>
+      <div style={{fontFamily:'var(--serif)', fontStyle:'italic', fontSize:18, color:'var(--ink-soft)', marginBottom:18}}>
+        a press for talks worth keeping.
+      </div>
+
+      <div style={{display:'grid', gridTemplateColumns:'repeat(8, 1fr)', gap:8, marginBottom:18}}>
+        {swatches.map(([c,name],i) => (
+          <div key={i} style={{display:'flex', flexDirection:'column', gap:6}}>
+            <div className="swatch sm" style={{background:c, border:'1px solid var(--rule)'}}></div>
+            <div style={{fontFamily:'var(--sans)', fontSize:9, color:'var(--ink-soft)', textTransform:'uppercase', letterSpacing:'.06em'}}>{name}</div>
+          </div>
+        ))}
+      </div>
+
+      <div style={{borderTop:'1px solid var(--rule-soft)', paddingTop:14, display:'flex', gap:24}}>
+        <div>
+          <div style={{fontFamily:'var(--serif)', fontSize:26, lineHeight:1, letterSpacing:'-0.02em'}}>Newsreader</div>
+          <div style={{fontFamily:'var(--sans)', fontSize:10, color:'var(--ink-soft)', marginTop:6, textTransform:'uppercase', letterSpacing:'.08em'}}>display</div>
+        </div>
+        <div>
+          <div style={{fontFamily:'var(--sans)', fontSize:16, fontWeight:600}}>Inter</div>
+          <div style={{fontFamily:'var(--sans)', fontSize:10, color:'var(--ink-soft)', marginTop:6, textTransform:'uppercase', letterSpacing:'.08em'}}>ui</div>
+        </div>
+        <div>
+          <div style={{fontFamily:'var(--mono)', fontSize:14}}>Plex Mono</div>
+          <div style={{fontFamily:'var(--sans)', fontSize:10, color:'var(--ink-soft)', marginTop:6, textTransform:'uppercase', letterSpacing:'.08em'}}>numerals</div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function AudienceB() {
+  return (
+    <div className="ab dB" style={{width:300, height:560, padding:'18px 16px', borderRadius:28, border:'8px solid #0b0d10'}}>
+      <div style={{display:'flex', justifyContent:'space-between', alignItems:'center', fontFamily:'var(--sans)', fontSize:10, color:'var(--ink-soft)', textTransform:'uppercase', letterSpacing:'.12em', fontWeight:600}}>
+        <span>SLAIDES</span>
+        <span style={{display:'inline-flex', alignItems:'center', gap:5}}>
+          <span style={{width:6,height:6,borderRadius:'50%',background:'#1f3a8a'}}></span> live
+        </span>
+      </div>
+      <div style={{marginTop:18}}>
+        <div className="kicker">Slide 02 — Poll</div>
+        <div style={{fontFamily:'var(--serif)', fontSize:22, lineHeight:1.18, letterSpacing:'-0.02em', margin:'8px 0 16px'}}>
+          Which describes a <em>function</em> best?
+        </div>
+        <div style={{display:'flex', flexDirection:'column', gap:8}}>
+          {['A box that maps inputs to outputs','A rule with one answer per input','A formula like y = mx + b','A graph drawn on paper'].map((t,i)=>(
+            <div key={i} style={{
+              border: i===1 ? '2px solid var(--accent)' : '1px solid var(--rule)',
+              borderRadius:8, padding:'10px 12px',
+              background: i===1 ? 'rgba(31,58,138,.06)' : 'transparent',
+              fontFamily:'var(--sans)', fontSize:13, color:'var(--ink)'
+            }}>
+              <span style={{fontFamily:'var(--mono)', fontSize:10, color:'var(--ink-soft)', marginRight:8}}>{String.fromCharCode(65+i)}</span>{t}
+            </div>
+          ))}
+        </div>
+      </div>
+      <div style={{position:'absolute', left:16, right:16, bottom:18, display:'flex', gap:8}}>
+        <button style={{flex:1, padding:'12px 0', borderRadius:8, border:'none', background:'var(--ink)', color:'var(--paper)', fontFamily:'var(--sans)', fontSize:13, fontWeight:600}}>Submit answer</button>
+        <button style={{padding:'12px 14px', borderRadius:8, border:'1px solid var(--rule)', background:'transparent', color:'var(--ink-soft)', fontFamily:'var(--sans)', fontSize:12}}>✋</button>
+      </div>
+    </div>
+  );
+}
+
+/* ---------- Direction C : Riso Studio ---------- */
+function SlideC() {
+  return (
+    <div className="ab dC" style={{width:980, height:620, padding:'56px 64px'}}>
+      <div className="halftone"></div>
+      <div className="halftone teal"></div>
+
+      <div style={{position:'absolute', top:28, left:32, right:32, display:'flex', justifyContent:'space-between', alignItems:'center'}}>
+        <div className="stamp">▣ Field Notes · L02</div>
+        <div style={{fontFamily:'var(--mono)', fontSize:11, color:'var(--ink-soft)'}}>page 02 / 24</div>
+      </div>
+
+      <div style={{display:'flex', flexDirection:'column', gap:22, marginTop:100, maxWidth:780, position:'relative'}}>
+        <h1 className="display">A line is the smallest possible <em>brain</em> you can build.</h1>
+        <p className="lede">Before transformers, before attention, before billion‑parameter language models — there was a line. Drawing it well is <span style={{borderBottom:'2px solid var(--clay)'}}>the entire game</span>.</p>
+        <div className="meta"><span>15 min</span><span>4 interactives</span><span style={{color:'var(--clay)'}}>● calculus-lite</span></div>
+      </div>
+
+      {/* off-register accent block */}
+      <div style={{position:'absolute', top:170, right:80, width:90, height:90, background:'var(--clay-2)', borderRadius:'50%', filter:'blur(.4px)'}}></div>
+      <div style={{position:'absolute', top:160, right:90, width:90, height:90, background:'var(--teal-2)', borderRadius:'50%', mixBlendMode:'multiply'}}></div>
+
+      <div style={{position:'absolute', left:64, bottom:36, fontFamily:'var(--mono)', fontSize:11, color:'var(--ink-soft)'}}>◐ DARK</div>
+      <div style={{position:'absolute', right:64, bottom:36, fontFamily:'var(--mono)', fontSize:11, color:'var(--ink-soft)', display:'flex', alignItems:'center', gap:12}}>
+        <span>‹ PREV</span>
+        <span style={{display:'inline-flex', gap:6}}>
+          <span style={{width:10,height:10,background:'var(--clay)',borderRadius:'50%'}}></span>
+          <span style={{width:10,height:10,border:'1px solid var(--clay)',borderRadius:'50%'}}></span>
+          <span style={{width:10,height:10,border:'1px solid var(--clay)',borderRadius:'50%'}}></span>
+          <span style={{width:10,height:10,border:'1px solid var(--clay)',borderRadius:'50%'}}></span>
+        </span>
+        <span>NEXT ›</span>
+      </div>
+    </div>
+  );
+}
+
+function EditorC() {
+  return (
+    <div className="ab dC" style={{width:520, height:380, padding:0, border:'2px solid var(--ink)'}}>
+      <div style={{display:'grid', gridTemplateColumns:'180px 1fr', height:'100%'}}>
+        <aside style={{background:'var(--paper-2)', borderRight:'2px solid var(--ink)', padding:'18px 14px'}}>
+          <div style={{fontFamily:'var(--mono)', fontSize:10, textTransform:'uppercase', letterSpacing:'.14em', color:'var(--clay)', marginBottom:14, fontWeight:500}}>▣ FOUNDATIONS</div>
+          <div style={{display:'flex', flexDirection:'column', gap:8, fontFamily:'var(--serif)', fontSize:15}}>
+            <div style={{color:'var(--clay)'}}>▾ 01 Simple Linear</div>
+            <div style={{paddingLeft:14, color:'var(--ink-soft)'}}>What is a model?</div>
+            <div style={{paddingLeft:14, color:'var(--ink)', background:'rgba(211,74,42,.15)', borderRadius:4, padding:'2px 4px 2px 14px'}}>What is a <em>function</em>?</div>
+            <div style={{paddingLeft:14, color:'var(--ink-soft)'}}>Drawing a line</div>
+            <div style={{paddingLeft:14, color:'var(--ink-soft)'}}>Measuring error</div>
+            <div style={{paddingLeft:14, color:'var(--ink-soft)'}}>Gradient descent</div>
+          </div>
+        </aside>
+        <main style={{padding:'20px 22px', position:'relative'}}>
+          <div style={{fontFamily:'var(--serif)', fontSize:26, fontWeight:400, letterSpacing:'-0.01em', marginBottom:14}}>
+            What even <em style={{color:'var(--clay)'}}>is</em> a function?
+          </div>
+          <div style={{display:'flex', flexDirection:'column', gap:9}}>
+            <div className="ed-line" style={{background:'var(--rule)', width:'92%'}}></div>
+            <div className="ed-line" style={{background:'var(--rule)', width:'78%'}}></div>
+            <div className="ed-line" style={{background:'var(--rule)', width:'68%'}}></div>
+            <div className="ed-line" style={{background:'rgba(211,74,42,.30)', width:'52%'}}></div>
+            <div className="ed-line" style={{background:'var(--rule)', width:'88%'}}></div>
+          </div>
+          <div style={{marginTop:18, padding:'10px 12px', background:'var(--clay)', color:'#fff', borderRadius:0, fontFamily:'var(--mono)', fontSize:11, textTransform:'uppercase', letterSpacing:'.08em'}}>
+            ▶ INTERPRET · "in plain english"
+          </div>
+        </main>
+      </div>
+    </div>
+  );
+}
+
+function PaletteC() {
+  const swatches = [
+    ['#f1ead8','paper'],
+    ['#e6dcc1','paper 2'],
+    ['#1c1a17','ink'],
+    ['#d34a2a','clay'],
+    ['#1d6680','teal'],
+    ['#c89b2a','ochre'],
+    ['#5b554b','dust'],
+    ['#cfc4a4','rule'],
+  ];
+  return (
+    <div className="ab dC" style={{width:520, height:380, padding:28, border:'2px solid var(--ink)'}}>
+      <div className="halftone" style={{opacity:.3}}></div>
+      <div style={{display:'flex', alignItems:'baseline', justifyContent:'space-between', marginBottom:6, position:'relative'}}>
+        <div className="wm" style={{fontFamily:'var(--serif)', fontSize:38, fontWeight:400, letterSpacing:'.14em'}}>SLAIDES</div>
+        <div style={{fontFamily:'var(--mono)', fontSize:11, color:'var(--clay)', textTransform:'uppercase', letterSpacing:'.1em'}}>direction · C</div>
+      </div>
+      <div style={{fontFamily:'var(--serif)', fontStyle:'italic', fontSize:20, color:'var(--ink-soft)', marginBottom:18, position:'relative'}}>
+        a riso pamphlet that listens back.
+      </div>
+
+      <div style={{display:'grid', gridTemplateColumns:'repeat(8, 1fr)', gap:8, marginBottom:18, position:'relative'}}>
+        {swatches.map(([c,name],i) => (
+          <div key={i} style={{display:'flex', flexDirection:'column', gap:6}}>
+            <div className="swatch sm" style={{background:c, border:'1.5px solid var(--ink)', borderRadius:0}}></div>
+            <div style={{fontFamily:'var(--mono)', fontSize:9, color:'var(--ink-soft)', textTransform:'uppercase', letterSpacing:'.06em'}}>{name}</div>
+          </div>
+        ))}
+      </div>
+
+      <div style={{borderTop:'2px solid var(--ink)', paddingTop:14, display:'flex', gap:24, position:'relative'}}>
+        <div>
+          <div style={{fontFamily:'var(--serif)', fontSize:30, lineHeight:1, fontStyle:'italic'}}>Instrument</div>
+          <div style={{fontFamily:'var(--mono)', fontSize:10, color:'var(--ink-soft)', marginTop:6, textTransform:'uppercase', letterSpacing:'.08em'}}>display · serif</div>
+        </div>
+        <div>
+          <div style={{fontFamily:'var(--sans)', fontSize:16, fontWeight:500}}>Plex Sans</div>
+          <div style={{fontFamily:'var(--mono)', fontSize:10, color:'var(--ink-soft)', marginTop:6, textTransform:'uppercase', letterSpacing:'.08em'}}>ui</div>
+        </div>
+        <div>
+          <div style={{fontFamily:'var(--mono)', fontSize:14}}>JetBrains Mono</div>
+          <div style={{fontFamily:'var(--mono)', fontSize:10, color:'var(--ink-soft)', marginTop:6, textTransform:'uppercase', letterSpacing:'.08em'}}>stamps</div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function AudienceC() {
+  return (
+    <div className="ab dC" style={{width:300, height:560, padding:'18px 16px', borderRadius:28, border:'8px solid #1c1a17'}}>
+      <div className="halftone" style={{opacity:.4}}></div>
+      <div style={{display:'flex', justifyContent:'space-between', alignItems:'center', fontFamily:'var(--mono)', fontSize:10, color:'var(--ink-soft)', textTransform:'uppercase', letterSpacing:'.1em', position:'relative'}}>
+        <span>SLAIDES</span>
+        <span style={{display:'inline-flex', alignItems:'center', gap:5, color:'var(--clay)'}}>
+          <span style={{width:6,height:6,borderRadius:'50%',background:'var(--clay)'}}></span> LIVE
+        </span>
+      </div>
+      <div style={{marginTop:18, position:'relative'}}>
+        <div className="stamp" style={{fontSize:9, padding:'2px 8px'}}>POLL · §02</div>
+        <div style={{fontFamily:'var(--serif)', fontSize:24, lineHeight:1.1, margin:'10px 0 16px'}}>
+          Which describes a <em style={{color:'var(--clay)'}}>function</em> best?
+        </div>
+        <div style={{display:'flex', flexDirection:'column', gap:8}}>
+          {['A box that maps inputs to outputs','A rule with one answer per input','A formula like y = mx + b','A graph drawn on paper'].map((t,i)=>(
+            <div key={i} style={{
+              border: i===1 ? '2px solid var(--clay)' : '1.5px solid var(--ink)',
+              borderRadius:0, padding:'10px 12px',
+              background: i===1 ? 'rgba(211,74,42,.12)' : 'transparent',
+              fontFamily:'var(--serif)', fontSize:14, color:'var(--ink)'
+            }}>
+              <span style={{fontFamily:'var(--mono)', fontSize:10, color:'var(--ink-soft)', marginRight:8}}>{String.fromCharCode(65+i)}</span>{t}
+            </div>
+          ))}
+        </div>
+      </div>
+      <div style={{position:'absolute', left:16, right:16, bottom:18, display:'flex', gap:8}}>
+        <button style={{flex:1, padding:'12px 0', borderRadius:0, border:'2px solid var(--ink)', background:'var(--clay)', color:'#fff', fontFamily:'var(--mono)', fontSize:11, textTransform:'uppercase', letterSpacing:'.1em', fontWeight:500}}>SUBMIT</button>
+        <button style={{padding:'12px 14px', borderRadius:0, border:'2px solid var(--ink)', background:'transparent', color:'var(--ink)', fontFamily:'var(--mono)', fontSize:11}}>✋</button>
+      </div>
+    </div>
+  );
+}
+
+/* ---------- Header card (intro) ---------- */
+function Intro() {
+  return (
+    <div className="ab" style={{
+      width:1200, height:200, padding:'34px 44px',
+      background:'#0f0e0c', color:'#f6f1e6', fontFamily:'IBM Plex Sans'
+    }}>
+      <div style={{display:'flex', alignItems:'baseline', gap:18}}>
+        <div style={{fontFamily:'Fraunces', fontWeight:600, fontSize:42, letterSpacing:'.22em'}}>SLAIDES</div>
+        <div style={{fontFamily:'Fraunces', fontStyle:'italic', fontSize:22, opacity:.7}}>visual directions, v0</div>
+      </div>
+      <div style={{marginTop:14, maxWidth:880, fontFamily:'Fraunces', fontSize:18, lineHeight:1.5, opacity:.88}}>
+        Three editorial systems for an interactive presentation tool. Each shows a presenter slide, the markdown editor with a generate‑widget hook, the workspace palette + type pairing, and the live audience phone view. Pick one — or mix.
+      </div>
+      <div style={{marginTop:14, fontFamily:'IBM Plex Mono', fontSize:11, opacity:.6, letterSpacing:'.06em'}}>
+        A · FIELD NOTES (warm parchment, terracotta) &nbsp;·&nbsp;
+        B · EDITORIAL PRESS (white, ink‑blue) &nbsp;·&nbsp;
+        C · RISO STUDIO (cream, clay + teal, halftone)
+      </div>
+    </div>
+  );
+}
+
+/* ---------- Page ---------- */
+function App() {
+  return (
+    <DesignCanvas title="SLAIDES — three directions" subtitle="warm parchment · editorial press · riso studio" background="#1a1816">
+      <DCSection id="intro" title="Brief">
+        <DCArtboard id="intro" label="What you're looking at" width={1200} height={200}><Intro/></DCArtboard>
+      </DCSection>
+
+      <DCSection id="A" title="Direction A — Field Notes" subtitle="warm parchment · terracotta accent · Fraunces + Plex">
+        <DCArtboard id="A1" label="Presenter slide" width={980} height={620}><SlideA/></DCArtboard>
+        <DCArtboard id="A2" label="Editor (markdown)" width={520} height={380}><EditorA/></DCArtboard>
+        <DCArtboard id="A3" label="Wordmark + palette + type" width={520} height={380}><PaletteA/></DCArtboard>
+        <DCArtboard id="A4" label="Audience (mobile, live poll)" width={316} height={576}><AudienceA/></DCArtboard>
+      </DCSection>
+
+      <DCSection id="B" title="Direction B — Editorial Press" subtitle="white · ink-blue accent · Newsreader + Inter">
+        <DCArtboard id="B1" label="Presenter slide" width={980} height={620}><SlideB/></DCArtboard>
+        <DCArtboard id="B2" label="Editor (markdown)" width={520} height={380}><EditorB/></DCArtboard>
+        <DCArtboard id="B3" label="Wordmark + palette + type" width={520} height={380}><PaletteB/></DCArtboard>
+        <DCArtboard id="B4" label="Audience (mobile, live poll)" width={316} height={576}><AudienceB/></DCArtboard>
+      </DCSection>
+
+      <DCSection id="C" title="Direction C — Riso Studio" subtitle="cream + clay + teal · halftone · Instrument Serif + Plex">
+        <DCArtboard id="C1" label="Presenter slide" width={980} height={620}><SlideC/></DCArtboard>
+        <DCArtboard id="C2" label="Editor (markdown)" width={520} height={380}><EditorC/></DCArtboard>
+        <DCArtboard id="C3" label="Wordmark + palette + type" width={520} height={380}><PaletteC/></DCArtboard>
+        <DCArtboard id="C4" label="Audience (mobile, live poll)" width={316} height={576}><AudienceC/></DCArtboard>
+      </DCSection>
+    </DesignCanvas>
+  );
+}
+
+ReactDOM.createRoot(document.getElementById('root')).render(<App/>);
+</script>
+</body>
+</html>

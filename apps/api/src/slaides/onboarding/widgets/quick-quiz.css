@@ -1,0 +1,99 @@
+.quick-quiz {
+  width: 100%;
+  max-width: 100%;
+  padding: 18px 20px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--card);
+  color: var(--card-foreground);
+  box-sizing: border-box;
+  font-family: var(--font-sans);
+}
+.quick-quiz fieldset {
+  border: 0;
+  margin: 0;
+  padding: 0;
+}
+.quick-quiz-question {
+  font-family: var(--font-serif);
+  font-size: 19px;
+  line-height: 1.35;
+  margin: 0 0 14px;
+  padding: 0;
+  color: var(--card-foreground);
+}
+.quick-quiz-choices {
+  list-style: none;
+  margin: 0 0 14px;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.quick-quiz-choice {
+  width: 100%;
+  text-align: left;
+  padding: 10px 14px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--card);
+  color: var(--card-foreground);
+  font: inherit;
+  cursor: pointer;
+  transition: border-color 0.12s ease, background 0.12s ease;
+}
+.quick-quiz-choice:hover:not(:disabled) {
+  border-color: var(--accent);
+}
+.quick-quiz-choice.is-picked {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+}
+.quick-quiz-choice.is-correct {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+}
+.quick-quiz-choice.is-wrong {
+  border-color: var(--destructive);
+  background: var(--accent-soft);
+  opacity: 0.8;
+}
+.quick-quiz-choice:disabled {
+  cursor: default;
+}
+.quick-quiz-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.quick-quiz-submit,
+.quick-quiz-reset {
+  padding: 8px 16px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  font: inherit;
+  cursor: pointer;
+  background: var(--primary);
+  color: var(--primary-foreground);
+}
+.quick-quiz-submit:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+.quick-quiz-reset {
+  background: var(--card);
+  color: var(--card-foreground);
+}
+.quick-quiz-feedback {
+  margin: 10px 0 0;
+  min-height: 1.2em;
+  font-family: var(--font-mono);
+  font-size: 12.5px;
+  color: var(--muted-foreground);
+}
+.quick-quiz-feedback[data-tone="correct"] {
+  color: var(--accent);
+}
+.quick-quiz-feedback[data-tone="wrong"] {
+  color: var(--destructive);
+}

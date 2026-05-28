@@ -96,10 +96,10 @@ The context menu should not include "Edit as Markdown" because Markdown is now a
 ### Widget Canvas Behavior
 
 - A slide can contain exactly one widget (1-widget-per-slide rule enforced).
-- Widget collection is a **persistent right sidebar** (not a drawer or modal) with three tabs:
-  - **My Library:** Deck-local widgets + cross-deck picker
-  - **AI Adjust:** Chat interface for adjusting selected widget
-  - **Code:** HTML/JS/CSS editors with explicit Save button
+- Widget collection is a **persistent right sidebar** (not a drawer or modal) with mode-specific panels:
+  - Library/create mode: deck-local widgets, cross-deck copy picker, and AI generation chat.
+  - Adjust mode: selected-widget chat plus props/code controls when available.
+  - Code editing uses HTML/JS/CSS editors with an explicit Save button.
 - Widget insertion paths:
   - Drag from sidebar library card to slide canvas
   - "Add to slide" from AI Generate preview card

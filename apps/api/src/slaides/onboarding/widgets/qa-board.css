@@ -1,0 +1,84 @@
+.qa-board {
+  width: 100%;
+  max-width: 100%;
+  padding: 18px 20px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--card);
+  color: var(--card-foreground);
+  box-sizing: border-box;
+  font-family: var(--font-sans);
+}
+.qa-board-prompt {
+  font-family: var(--font-serif);
+  font-size: 19px;
+  line-height: 1.35;
+  margin: 0 0 12px;
+  color: var(--card-foreground);
+}
+.qa-board-form {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+.qa-board-input {
+  flex: 1;
+  min-width: 0;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--card);
+  color: var(--card-foreground);
+  font: inherit;
+}
+.qa-board-input:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+.qa-board-submit {
+  padding: 10px 16px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--primary);
+  color: var(--primary-foreground);
+  font: inherit;
+  cursor: pointer;
+}
+.qa-board-list {
+  list-style: none;
+  counter-reset: q;
+  margin: 0 0 10px;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.qa-board-entry {
+  counter-increment: q;
+  padding: 10px 14px 10px 38px;
+  position: relative;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--card);
+  color: var(--card-foreground);
+  line-height: 1.45;
+}
+.qa-board-entry::before {
+  content: "Q" counter(q);
+  position: absolute;
+  left: 10px;
+  top: 50%;
+  transform: translateY(-50%);
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  letter-spacing: 0.06em;
+  color: var(--muted-foreground);
+}
+.qa-board-status {
+  margin: 0;
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--muted-foreground);
+}

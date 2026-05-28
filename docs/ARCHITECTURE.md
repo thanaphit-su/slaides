@@ -46,18 +46,18 @@
 
 ### Frontend — Vue 3 + Vite
 
-- **Routes:** `/signin`, `/workspace`, `/editor/:deck`, `/present/:session`, `/j/:code` (audience landing), `/audience/:session`.
+- **Routes:** `/signin`, `/join`, `/workspace`, `/editor/:deckId`, `/present/:sessionId`, `/j/:code` (audience landing), `/audience/:sessionId`, `/decks/:deckId/preview`.
 - **State:** Pinia stores. One store per major domain: `auth`, `workspace`, `editor`, `session`, `widgets`.
-- **Markdown:** `remark` + custom plugin to lift `{{widget:id}}` into a Vue component.
-- **Editor surface:** Monaco for raw-markdown edit-mode; a custom contenteditable layer for inline edits in rendered mode. Slides are split on `H1` boundaries at save.
-- **Realtime:** A single `useSession()` composable owns the WebSocket. It surfaces reactive `slideIdx`, `participants`, `questions`, `interactions`.
+- **Markdown:** Custom renderer in `apps/web/src/markdown/render.ts` lifts `{{widget:id}}` into a Vue widget frame and serialises contenteditable DOM back to markdown.
+- **Editor surface:** Rendered mode uses a custom contenteditable canvas; Markdown mode uses a plain textarea. User typing is stored verbatim and does not auto-split slides on H1. `split_on_h1` remains a utility for future paste/import flows.
+- **Realtime:** The Pinia session store owns the WebSocket. It surfaces reactive slide, participant, question, interaction, and placement-state data.
 
 ### Backend — FastAPI
 
 - Python 3.12, `uvicorn` workers behind a reverse proxy.
-- Domain split into routers: `auth`, `decks`, `slides`, `widgets`, `sessions`, `participants`, `interactions`, `llm`.
+- Domain split into routers: `auth`, `workspace`, `decks`, `widgets`, `sessions`, `llm`; slide, participant, and interaction actions are nested under deck/session routers.
 - SQLAlchemy 2.x async with Pydantic v2 schemas. Alembic for migrations.
-- Background tasks via Celery + Redis (transcript summarisation, exports).
+- No separate worker is implemented today. Transcript summarisation/export workers remain M5/future work.
 - WebSocket hub: one async task per session that fans out events from Redis pub/sub.
 
 ### Realtime — WebSockets + Redis
@@ -150,15 +150,15 @@ create table widget (
   js           text,
   css          text,
   props_schema jsonb default '{}',
-  example_props jsonb default '{}',              -- Sample values for preview/thumbnail rendering
   tags         jsonb default '[]',               -- JSON array (portable PG/SQLite)
   version      text default 'v0.1',
   behavior     jsonb not null default '{"kind": "quiet"}',  -- Widgets v2: {"kind":"quiet"} | {"kind":"loud","aggregator":"tally",...}
-  ai_spec      jsonb default '{}',               -- Structured intent/spec from AI generation
   current_revision_id uuid,                      -- FK to widget_revision (soft during migration, enforced in PG)
   created_at   timestamptz default now(),
   updated_at   timestamptz default now()
 );
+-- Note: `example_props` and `ai_spec` live on widget_revision. WidgetOut flattens
+-- the current revision's values for client compatibility.
 
 -- Widget revision tracking (migration 0015)
 create table widget_revision (
@@ -284,7 +284,7 @@ create index ix_session_slide on session_slide (session_id, position);
 create table placement_state (
   session_id   uuid references session(id) on delete cascade,
   placement_id text not null,                  -- Matches slide_widget.placement_id
-  widget_id    uuid references widget(id) not null,
+  widget_id    uuid references widget(id),     -- nullable for native/session-owned placement states
   aggregator   text not null,                  -- 'tally' | 'latest_per_participant' | 'append' | 'set_union' | 'keyed_tally'
   state        jsonb not null default '{}',    -- Aggregated state (shape depends on aggregator)
   state_version int not null default 0,        -- Monotonic, for optimistic concurrency
@@ -321,46 +321,69 @@ Storing the ref instead of `participant_id` keeps anonymous rows perfectly porta
 
 ## REST API surface
 
-All routes under `/api/v1`. JSON in/out. Standard pagination via `?cursor=&limit=`.
+All REST routes below are mounted under `/api/v1`. JSON in/out unless the route returns a downloadable archive.
 
 | Method | Path | Purpose |
 |---|---|---|
-| POST  | `/auth/signin`                  | Instructor login → JWT pair |
+| POST  | `/auth/signup`                  | Instructor signup via Supabase Auth; creates pending local profile |
+| POST  | `/auth/signin`                  | Instructor login via Supabase Auth → access/refresh pair |
 | POST  | `/auth/refresh`                 | Refresh access token |
-| POST  | `/auth/guest`                   | Guest join: { code, email, display_name, anonymous } → session token |
-| GET   | `/workspace`                    | Current workspace (settings, capabilities) |
-| PATCH | `/workspace`                    | Update LLM config / toggles |
+| GET   | `/auth/me`                      | Current instructor profile, including approval status |
+| POST  | `/auth/guest`                   | Guest join: `{ code, email, display_name, anonymous }` → session token |
+| GET   | `/workspace`                    | Current workspace LLM settings/capabilities |
+| PATCH | `/workspace`                    | Update LLM base URL/key/model library/capability routing |
 | GET   | `/decks`                        | List decks |
 | POST  | `/decks`                        | Create empty deck |
 | GET   | `/decks/:id`                    | Full deck (sections, slides, slide_widgets) |
-| PATCH | `/decks/:id`                    | Rename, theme, layout |
+| PATCH | `/decks/:id`                    | Rename, subtitle, cover, manifest |
 | DELETE| `/decks/:id`                    | Delete |
 | POST  | `/decks/:id/duplicate`          | Duplicate |
-| POST  | `/decks/:id/export`             | → `.slaides` zip (signed URL) |
+| POST  | `/decks/:id/export`             | Return `.slaides` zip inline with `Content-Disposition` |
 | POST  | `/decks/import`                 | Upload a `.slaides` zip |
-| PUT   | `/decks/:id/slides/:sid`        | Replace slide markdown (chunked autosave) |
 | POST  | `/decks/:id/slides`             | Insert slide at position |
+| PUT   | `/decks/:id/slides/:sid`        | Replace slide markdown and reconcile widget placeholders |
 | DELETE| `/decks/:id/slides/:sid`        | Delete slide |
-| GET   | `/api/v1/widgets`                           | List all widgets (workspace-wide, for cross-deck picker) |
-| GET   | `/api/v1/decks/:deck_id/widgets`            | List widgets in specific deck |
-| POST  | `/api/v1/decks/:deck_id/widgets`            | Create widget in deck |
-| POST  | `/api/v1/decks/:deck_id/widgets/copy`       | Copy widget from another deck (body: {source_widget_id}) |
-| POST  | `/api/v1/decks/:deck_id/widgets/import`     | Import `.swidget` into deck |
-| PATCH | `/widgets/:id`                              | Update widget metadata/source |
-| DELETE| `/widgets/:id`                              | Delete widget (409 if in use; `?force=true` cascades) |
-| POST  | `/widgets/:id/export`                       | Export as `.swidget` file |
-| GET   | `/widgets/:id/revisions`                    | List all revisions |
-| POST  | `/widgets/:id/revisions/:rev_id/rollback`   | Rollback to specific revision |
-| GET   | `/widgets/:id/ai-thread`                    | Get or create AI conversation thread |
-| GET   | `/widgets/:id/ai-thread/messages`           | List messages in thread |
-| POST  | `/decks/:deck_id/slides/:slide_id/widgets`  | Attach widget to slide (enforces 1-per-slide, same-deck) |
-| PATCH | `/decks/:deck_id/slides/:slide_id/widgets/:placement_id` | Update placement props (validates against props_schema) |
+| POST  | `/decks/:id/sections`           | Create section |
+| PATCH | `/decks/:id/sections/:section_id` | Update section |
+| DELETE| `/decks/:id/sections/:section_id` | Delete section |
+| POST  | `/decks/:id/sections/reorder`   | Reorder sections |
+| POST  | `/decks/:id/slides/reorder`     | Reorder slides |
+| GET   | `/widgets`                      | List all widgets in workspace, for cross-deck picker |
+| POST  | `/widgets/from-interaction`     | Save a live interaction as a deck widget |
+| GET   | `/widgets/:id`                  | Fetch widget body; guests may fetch only widgets used in their session |
+| PATCH | `/widgets/:id`                  | Update widget metadata/source; creates revisions for source/contract fields |
+| DELETE| `/widgets/:id`                  | Delete widget (409 if in use; `?force=true` detaches) |
+| POST  | `/widgets/:id/export`           | Export as `.swidget` file |
+| GET   | `/widgets/:id/revisions`        | List all revisions |
+| POST  | `/widgets/:id/revisions/:rev_id/rollback` | Create a new revision from an older revision |
+| POST  | `/widgets/:id/ai-thread`        | Create AI conversation thread |
+| GET   | `/widgets/:id/ai-thread`        | Get latest AI thread with embedded messages, or `null` |
+| POST  | `/widgets/:id/ai-thread/:thread_id/messages` | Append message to a widget AI thread |
+| GET   | `/decks/:deck_id/widgets`       | List widgets in specific deck |
+| POST  | `/decks/:deck_id/widgets`       | Create widget in deck |
+| POST  | `/decks/:deck_id/widgets/copy`  | Copy widget into deck; same-deck duplicate is allowed |
+| POST  | `/decks/:deck_id/widgets/import` | Import `.swidget` into deck |
+| POST  | `/decks/:deck_id/slides/:slide_id/widgets` | Attach widget to slide (1-per-slide, same-deck) |
+| PATCH | `/decks/:deck_id/slides/:slide_id/widgets/:placement_id` | Update placement props; may require reset confirmation |
 | DELETE| `/decks/:deck_id/slides/:slide_id/widgets/:placement_id` | Detach widget, strip placeholder from markdown |
-| POST  | `/sessions`                     | Start a session from a deck → returns code + URL |
-| GET   | `/sessions/:id`                 | Session snapshot |
+| GET   | `/sessions`                     | List instructor sessions |
+| GET   | `/sessions/active?deck_id=...`  | Current non-preview live session for a deck |
+| POST  | `/sessions`                     | Start a live session from a deck |
+| POST  | `/sessions/preview`             | Start an ephemeral preview session with fake guests |
+| GET   | `/sessions/by-code/:code`       | Public session lookup for join flow |
+| GET   | `/sessions/:id/audience`        | Guest-authorized audience snapshot |
+| GET   | `/sessions/:id`                 | Instructor session snapshot |
 | POST  | `/sessions/:id/end`             | End a session |
-| GET   | `/sessions/:id/transcript`      | Full transcript (paginated) |
-| GET   | `/sessions/:id/transcript.csv`  | Export CSV |
+| POST  | `/sessions/:id/advance`         | Advance/rewind to deck slide or session slide |
+| POST  | `/sessions/:id/interactions`    | Open poll/question/random/widget session slide |
+| PATCH | `/sessions/:id/interactions/:session_slide_id` | Edit poll/question interaction spec |
+| GET   | `/sessions/:id/interactions/:session_slide_id/answers` | List open-question answers |
+| POST  | `/sessions/:id/interactions/:session_slide_id/promote/:log_id` | Promote answer |
+| POST  | `/sessions/:id/interactions/:session_slide_id/unpromote/:log_id` | Unpromote answer |
+| POST  | `/sessions/:id/interactions/:session_slide_id/hide/:log_id` | Hide answer |
+| POST  | `/sessions/:id/interactions/:session_slide_id/reset` | Reset poll results |
+| POST  | `/sessions/:id/interactions/:session_slide_id/close` | Close voting |
+| POST  | `/sessions/:id/interactions/:session_slide_id/reopen` | Reopen voting |
 | POST  | `/llm/complete`                 | Stream LLM response (SSE) |
 
 ## WebSocket protocol
@@ -440,7 +463,7 @@ async def contribute_to_placement(
 ## Widget sandbox
 
 ```html
-<iframe sandbox="allow-scripts" srcdoc="<!doctype html><html>...widget..."></iframe>
+<iframe sandbox="allow-scripts allow-forms" srcdoc="<!doctype html><html>...widget..."></iframe>
 ```
 
 Before the widget's script runs, the host injects a bridge script (via the srcdoc template) that defines `window.slaides`. All host-bound calls become `parent.postMessage({type, ...}, ORIGIN)`. The host listens on its window and routes the message to the right session WebSocket.
@@ -451,8 +474,8 @@ Why iframe and not Web Components? Because v0.1 lets users hand-edit (or LLM-gen
 
 - **API** — One stateless FastAPI service. Horizontally scalable. Behind a reverse proxy (Caddy / nginx) for TLS.
 - **Realtime** — Same FastAPI processes; Redis is the broker.
-- **Worker** — A small Celery worker for async exports + transcript summarisation.
-- **DB** — Supabase project (Postgres + auth + signed storage URLs for exports).
+- **Worker** — Not implemented yet. Add a worker only when M5 transcript summarisation/export needs asynchronous jobs.
+- **DB** — Supabase project (Postgres + auth). Current `.slaides` / `.swidget` exports are returned inline; signed storage URLs are a future option if artifacts grow.
 - **Cache / Pub-Sub** — Redis (managed, e.g. Upstash).
 - **Static frontend** — Vue 3 build deployed to a CDN (e.g. Cloudflare Pages). Talks to the API by configured base URL.
 
