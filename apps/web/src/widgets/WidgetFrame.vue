@@ -72,12 +72,21 @@ const inflightLlm = new Map<string, AbortController>();
 // render against the same token set. See widgets/theme-tokens.ts.
 const hostTokens = readHostTokens();
 
+function cloneForPostMessage(value: Record<string, unknown>): Record<string, unknown> {
+  try {
+    const cloned = JSON.parse(JSON.stringify(value ?? {}));
+    return cloned && typeof cloned === "object" ? cloned as Record<string, unknown> : {};
+  } catch {
+    return {};
+  }
+}
+
 // Snapshot bootProps at mount so later mutations don't recompute `srcdoc` and
 // reload the iframe — that would wipe live widget state (poll votes, input
 // text, plotter expression). Live prop updates flow exclusively through the
 // `props.update` postMessage in the watch() below. Deep-clone via JSON to
 // detach from Vue's reactive proxy so nested mutations stay invisible here.
-const bootSnapshot = JSON.parse(JSON.stringify(props.bootProps || {}));
+const bootSnapshot = cloneForPostMessage(props.bootProps || {});
 // Same idiom for participant identity: snapshot at mount so a transient
 // change in the join state doesn't reload the iframe and wipe in-progress
 // quiz answers.
@@ -216,7 +225,10 @@ ${widgetJs}
 }
 
 function send(type: string, payload: Record<string, unknown>) {
-  iframeEl.value?.contentWindow?.postMessage({ slaides: true, type, payload }, "*");
+  iframeEl.value?.contentWindow?.postMessage(
+    { slaides: true, type, payload: cloneForPostMessage(payload) },
+    "*",
+  );
 }
 
 function onMessage(ev: MessageEvent) {

@@ -699,7 +699,7 @@ describe("WidgetCollection — structured widget workflow", () => {
       name: "Existing",
       kind: "custom",
       description: null,
-      html: "<section>new</section>",
+      html: "<section><p>new adjusted widget content</p></section>",
       js: "",
       css: "",
       props_schema: {},
@@ -743,6 +743,56 @@ describe("WidgetCollection — structured widget workflow", () => {
       applied_from_message_id: expect.any(String),
     });
     expect(content.widget).toBeUndefined();
+  });
+
+  it("clears adjust apply button state after the widget patch succeeds even if thread history stalls", async () => {
+    const wrapper = await mountInAdjustMode();
+    patchMock.mockResolvedValue({
+      id: "w-existing",
+      deck_id: "deck-1",
+      derived_from_id: null,
+      name: "Existing",
+      kind: "custom",
+      description: null,
+      html: "<section>new</section>",
+      js: "",
+      css: "",
+      props_schema: {},
+      tags: [],
+      version: "1",
+      behavior: { kind: "quiet" },
+      current_revision_id: "rev-2",
+      example_props: {},
+      ai_spec: {},
+    });
+    appendAiMessageMock.mockImplementation(async (_widgetId, threadId, body) => {
+      if (body.message_type === "apply") {
+        return new Promise(() => {});
+      }
+      return {
+        id: `msg-${body.message_type}`,
+        thread_id: threadId,
+        ...body,
+        revision_id: body.revision_id ?? null,
+      };
+    });
+    await streamCompletion({
+      type: "draft",
+      widget: {
+        html: "<section><p>new adjusted widget content</p></section>",
+      },
+    });
+    await sendPrompt(wrapper);
+
+    await wrapper.find(".widget-preview-insert").trigger("click");
+    await new Promise((r) => setTimeout(r, 0));
+    await nextTick();
+
+    expect(patchMock).toHaveBeenCalledTimes(1);
+    expect(appendAiMessageMock.mock.calls.some((call) => call[2]?.message_type === "apply")).toBe(true);
+    const buttonTexts = wrapper.findAll(".widget-preview-insert").map((button) => button.text());
+    expect(buttonTexts.some((text) => text.includes("applying"))).toBe(false);
+    expect(wrapper.find(".widget-preview-applied-chip").exists()).toBe(true);
   });
 
   it("renders backend validator warnings inline with the draft preview", async () => {

@@ -1,6 +1,6 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { mount } from "@vue/test-utils";
-import { nextTick, reactive } from "vue";
+import { isReactive, nextTick, reactive } from "vue";
 import WidgetFrame from "../src/widgets/WidgetFrame.vue";
 import type { Widget } from "../src/api/types";
 
@@ -40,6 +40,39 @@ describe("WidgetFrame reactivity", () => {
     // And the snapshot remains the initial values, not the mutated ones.
     expect(afterSrc).toContain("Initial?");
     expect(afterSrc).not.toContain("Edited?");
+  });
+
+  it("posts live prop updates as cloneable plain objects", async () => {
+    const bootProps = reactive<Record<string, unknown>>({
+      question: "Initial?",
+      nested: { label: "A" },
+    });
+    const wrapper = mount(WidgetFrame, {
+      props: { widget: fakeWidget(), placementId: "p-1", bootProps, role: "instructor" },
+    });
+    const iframe = wrapper.find("iframe").element as HTMLIFrameElement;
+    const postMessage = vi.fn();
+    Object.defineProperty(iframe, "contentWindow", {
+      configurable: true,
+      value: { postMessage },
+    });
+
+    bootProps.question = "Edited?";
+    bootProps.nested = { label: "B" };
+    await nextTick();
+
+    expect(postMessage).toHaveBeenCalledWith(
+      {
+        slaides: true,
+        type: "props.update",
+        payload: { props: { question: "Edited?", nested: { label: "B" } } },
+      },
+      "*",
+    );
+    const payload = postMessage.mock.calls[0]?.[0]?.payload as { props?: Record<string, unknown> };
+    expect(isReactive(payload)).toBe(false);
+    expect(isReactive(payload.props)).toBe(false);
+    expect(isReactive(payload.props?.nested)).toBe(false);
   });
 
   it("reloads the iframe when the widget identity changes", async () => {
