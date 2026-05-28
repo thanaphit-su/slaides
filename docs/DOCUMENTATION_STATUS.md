@@ -12,7 +12,7 @@ This file records the documentation state after the 2026-05-28 docs refresh and 
 | `ARCHITECTURE.md` | CURRENT WITH M5 CAVEATS | Data model, widget revisions, AI threads, and placement state match code. Transcript routes and worker/export notes are documented as future, not current. |
 | `SPEC.md` | CURRENT WITH M5 CAVEATS | Auth, widget sidebar, AI Adjust, settings, and widget collection text match current implementation. Transcript/display persistence remain future. |
 | `REQUIREMENTS.md` | CURRENT WITH EXPLICIT BACKLOG ITEMS | Shipped items use check marks; transcript view/export, display persistence, and i18n catalog are marked backlog. |
-| `HANDOFF.md` | CURRENT | Most detailed implementation history; latest verified counts remain 166 backend / 188 frontend. |
+| `HANDOFF.md` | CURRENT | Most detailed implementation history; latest verified counts are 166 backend / 190 frontend. |
 | `SLIDE_CANVAS_UX_TEST_CASES.md` | NEEDS REVIEW | Still useful as a manual UX checklist, but should be rechecked against preview mode and widget-revision flows. |
 | `WIDGETS_V2.md` | CURRENT | Reference design brief plus shipped decision log. |
 | `architecture/widget-revisions-ai-workflow.md` | CURRENT | Authoritative contract for migration 0015 workflow. |
@@ -38,4 +38,4 @@ cd apps/web && npm test -- --run
 Results:
 
 - Backend: 166 passed.
-- Frontend: 188 passed.
+- Frontend: 190 passed.
