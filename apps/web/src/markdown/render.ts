@@ -568,12 +568,7 @@ function renderWidgetBlock(b: Block, key: number, opts: RenderOptions, fill = fa
   const chrome = h("div", [labelChrome, actionChrome]);
 
   let body: VNode;
-  // Widgets v2 — placements render captured revision, not mutable current.
-  // When usePlacementRevision is true but revision is missing, fail closed
-  // with a visible error instead of falling back to mutable widget.
-  const useRevision = opts.usePlacementRevision !== false;
-  const hasRevision = !!placement?.revision;
-  const renderedWidget = widget && useRevision && hasRevision
+  const renderedWidget = widget && opts.usePlacementRevision !== false && placement?.revision
     ? {
         ...widget,
         html: placement.revision.html || "",
@@ -587,40 +582,19 @@ function renderWidgetBlock(b: Block, key: number, opts: RenderOptions, fill = fa
       }
     : widget;
   if (renderedWidget && placement && opts.WidgetFrameComp) {
-    // Fail closed: if we should use revision but it's missing, show error state.
-    if (useRevision && !hasRevision) {
-      body = h(
-        "div",
-        {
-          style: {
-            padding: "28px 24px",
-            border: "2px solid var(--err)",
-            borderRadius: "var(--r-lg)",
-            background: "var(--paper-2)",
-            fontFamily: "var(--mono)",
-            fontSize: "11px",
-            color: "var(--err)",
-            letterSpacing: "0.04em",
-            textAlign: "center",
-          },
-        },
-        `WIDGET · #${id} — revision missing`,
-      );
-    } else {
-      body = h(opts.WidgetFrameComp, {
-        widget: renderedWidget,
-        placementId: id,
-        bootProps: placement.props || {},
-        role: opts.widgetRole || "instructor",
-        fill,
-        minHeight: fill ? 560 : 80,
-        participant: opts.widgetParticipant,
-        onInteraction: opts.onWidgetEvent
-          ? (event: { type: string; payload: Record<string, unknown> }) =>
-              opts.onWidgetEvent!(placement, event)
-          : undefined,
-      });
-    }
+    body = h(opts.WidgetFrameComp, {
+      widget: renderedWidget,
+      placementId: id,
+      bootProps: placement.props || {},
+      role: opts.widgetRole || "instructor",
+      fill,
+      minHeight: fill ? 560 : 80,
+      participant: opts.widgetParticipant,
+      onInteraction: opts.onWidgetEvent
+        ? (event: { type: string; payload: Record<string, unknown> }) =>
+            opts.onWidgetEvent!(placement, event)
+        : undefined,
+    });
   } else {
     body = h(
       "div",

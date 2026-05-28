@@ -36,7 +36,7 @@ function paint(md: string) {
     {},
     renderMarkdown(md, {
       widgets: props.widgets,
-      usePlacementRevision: true,
+      usePlacementRevision: false,
       getWidget: props.getWidget,
       WidgetFrameComp: WidgetFrame,
       onAdjust: props.onAdjust,
