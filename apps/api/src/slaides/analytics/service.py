@@ -83,7 +83,7 @@ async def get_merged_transcript(
     """
     Merge events from multiple sources into chronological transcript.
     
-    Uses SQL UNION ALL with LIMIT/OFFSET to push pagination into the database.
+    Fetches from each source with LIMIT/OFFSET applied per-source, then merges and sorts in Python.
     
     Sources:
     - session_event: slide.advance, llm.interpret
@@ -97,132 +97,23 @@ async def get_merged_transcript(
     """
     limit = min(limit, max_limit)
     
-    # Get total count first
-    count_result = await session.execute(
-        select(
-            func.count().label("total")
-        ).select_from(
-            sa.union_all(
-                select(SessionEvent.session_id),
-                select(InteractionLog.session_id),
-                select(Question.session_id),
-                select(SessionSlide.session_id),
-            ).subquery()
-        ).where(
-            sa.column("session_id") == session_id
-        )
-    )
-    total = count_result.scalar() or 0
-    
-    # Build UNION ALL query with proper ordering
-    # Each subquery returns: occurred_at, event_type, payload, source
-    se_subq = select(
-        SessionEvent.occurred_at,
-        SessionEvent.event_type,
-        SessionEvent.payload,
-        sa.literal("session_event").label("source"),
-        sa.literal(None).label("participant_ref"),
-        sa.literal(None).label("slide_id"),
-        sa.literal(None).label("session_slide_id"),
-        sa.literal(None).label("widget_id"),
-        sa.literal(None).label("question_id"),
-        sa.literal(None).label("text"),
-        sa.literal(None).label("anon"),
-        sa.literal(None).label("kind"),
-        sa.literal(None).label("spec"),
-        sa.literal(None).label("parent_slide_id"),
-    ).where(SessionEvent.session_id == session_id)
-    
-    il_subq = select(
-        InteractionLog.occurred_at,
-        (sa.literal("interaction.") + InteractionLog.kind).label("event_type"),
-        InteractionLog.payload,
-        sa.literal("interaction_log").label("source"),
-        InteractionLog.participant_ref,
-        InteractionLog.slide_id,
-        InteractionLog.session_slide_id,
-        InteractionLog.widget_id,
-        sa.literal(None).label("question_id"),
-        sa.literal(None).label("text"),
-        sa.literal(None).label("anon"),
-        sa.literal(None).label("kind"),
-        sa.literal(None).label("spec"),
-        sa.literal(None).label("parent_slide_id"),
-    ).where(InteractionLog.session_id == session_id)
-    
-    q_subq = select(
-        Question.raised_at.label("occurred_at"),
-        sa.literal("question.raised").label("event_type"),
-        sa.cast(
-            sa.func.json_object(
-                'question_id', sa.cast(Question.id, sa.String),
-                'text', Question.text,
-                'participant_ref', Question.participant_ref,
-                'anon', Question.anon,
-                'slide_id', sa.cast(Question.slide_id, sa.String)
-            ), sa.JSON
-        ).label("payload"),
-        sa.literal("question").label("source"),
-        Question.participant_ref,
-        sa.literal(None).label("slide_id"),
-        sa.literal(None).label("session_slide_id"),
-        sa.literal(None).label("widget_id"),
-        Question.id.label("question_id"),
-        Question.text,
-        Question.anon,
-        sa.literal(None).label("kind"),
-        sa.literal(None).label("spec"),
-        sa.literal(None).label("parent_slide_id"),
-    ).where(Question.session_id == session_id)
-    
-    ss_open_subq = select(
-        SessionSlide.opened_at.label("occurred_at"),
-        sa.literal("interaction.opened").label("event_type"),
-        sa.cast(
-            sa.func.json_object(
-                'session_slide_id', sa.cast(SessionSlide.id, sa.String),
-                'kind', SessionSlide.kind,
-                'spec', SessionSlide.spec,
-                'parent_slide_id', sa.cast(SessionSlide.parent_slide_id, sa.String)
-            ), sa.JSON
-        ).label("payload"),
-        sa.literal("session_slide").label("source"),
-        sa.literal(None).label("participant_ref"),
-        sa.literal(None).label("slide_id"),
-        sa.literal(None).label("session_slide_id"),
-        sa.literal(None).label("widget_id"),
-        sa.literal(None).label("question_id"),
-        sa.literal(None).label("text"),
-        sa.literal(None).label("anon"),
-        SessionSlide.kind,
-        SessionSlide.spec,
-        SessionSlide.parent_slide_id,
-    ).where(SessionSlide.session_id == session_id)
-    
-    # Union all subqueries
-    union_query = sa.union_all(se_subq, il_subq, q_subq, ss_open_subq)
-    
-    # Order and paginate
-    ordered = union_query.order_by(sa.column("occurred_at"))
-    paginated_query = ordered.limit(limit).offset(offset)
-    
-    rows = await session.execute(paginated_query)
+    # Get total count
+    se_count = (await session.execute(select(func.count()).select_from(SessionEvent).where(SessionEvent.session_id == session_id))).scalar() or 0
+    il_count = (await session.execute(select(func.count()).select_from(InteractionLog).where(InteractionLog.session_id == session_id))).scalar() or 0
+    q_count = (await session.execute(select(func.count()).select_from(Question).where(Question.session_id == session_id))).scalar() or 0
+    ss_count = (await session.execute(select(func.count()).select_from(SessionSlide).where(SessionSlide.session_id == session_id))).scalar() or 0
+    total = se_count + il_count + q_count + ss_count
     
     events = []
-    for r in rows:
-        event = {
-            "occurred_at": r.occurred_at.isoformat(),
-            "event_type": r.event_type,
-            "payload": r.payload if r.payload else {},
-            "source": r.source,
-        }
-        # Add participant_ref to payload if present
-        if r.participant_ref:
-            event["payload"]["participant_ref"] = r.participant_ref
-        
-        # Decrypt llm.interpret selection/prompt fields
-        if r.event_type == "llm.interpret" and r.source == "session_event":
-            payload = event["payload"]
+    
+    # Fetch session events
+    se_rows = await session.execute(
+        select(SessionEvent).where(SessionEvent.session_id == session_id).order_by(SessionEvent.occurred_at).limit(limit).offset(offset)
+    )
+    for r in se_rows.scalars():
+        payload = dict(r.payload) if r.payload else {}
+        # Decrypt llm.interpret
+        if r.event_type == "llm.interpret":
             if "selection_enc" in payload:
                 try:
                     payload["selection"] = decrypt_for_transcript(workspace_id, payload["selection_enc"])
@@ -237,10 +128,84 @@ async def get_merged_transcript(
                 except Exception:
                     payload["prompt"] = "[unable to decrypt]"
                     del payload["prompt_enc"]
-        
-        events.append(event)
+        events.append({
+            "occurred_at": r.occurred_at.isoformat(),
+            "event_type": r.event_type,
+            "payload": payload,
+            "source": "session_event",
+        })
     
-    return events, total
+    # Fetch interaction log
+    il_rows = await session.execute(
+        select(InteractionLog).where(InteractionLog.session_id == session_id).order_by(InteractionLog.occurred_at).limit(limit).offset(offset)
+    )
+    for r in il_rows.scalars():
+        payload = dict(r.payload) if r.payload else {}
+        if r.participant_ref:
+            payload["participant_ref"] = r.participant_ref
+        if r.slide_id:
+            payload["slide_id"] = str(r.slide_id)
+        if r.session_slide_id:
+            payload["session_slide_id"] = str(r.session_slide_id)
+        if r.widget_id:
+            payload["widget_id"] = str(r.widget_id)
+        events.append({
+            "occurred_at": r.occurred_at.isoformat(),
+            "event_type": f"interaction.{r.kind}",
+            "payload": payload,
+            "source": "interaction_log",
+        })
+    
+    # Fetch questions
+    q_rows = await session.execute(
+        select(Question).where(Question.session_id == session_id).order_by(Question.raised_at).limit(limit).offset(offset)
+    )
+    for r in q_rows.scalars():
+        events.append({
+            "occurred_at": r.raised_at.isoformat(),
+            "event_type": "question.raised",
+            "payload": {
+                "question_id": str(r.id),
+                "text": r.text,
+                "participant_ref": r.participant_ref,
+                "anon": str(r.anon),
+                "slide_id": str(r.slide_id) if r.slide_id else None,
+            },
+            "source": "question",
+        })
+    
+    # Fetch session slides (opened events)
+    ss_rows = await session.execute(
+        select(SessionSlide).where(SessionSlide.session_id == session_id).order_by(SessionSlide.opened_at).limit(limit).offset(offset)
+    )
+    for r in ss_rows.scalars():
+        events.append({
+            "occurred_at": r.opened_at.isoformat(),
+            "event_type": "interaction.opened",
+            "payload": {
+                "session_slide_id": str(r.id),
+                "kind": r.kind,
+                "spec": r.spec,
+                "parent_slide_id": str(r.parent_slide_id) if r.parent_slide_id else None,
+            },
+            "source": "session_slide",
+        })
+        if r.closed_at:
+            events.append({
+                "occurred_at": r.closed_at.isoformat(),
+                "event_type": "interaction.closed",
+                "payload": {
+                    "session_slide_id": str(r.id),
+                    "kind": r.kind,
+                },
+                "source": "session_slide",
+            })
+    
+    # Sort by occurred_at and apply pagination
+    events.sort(key=lambda e: e["occurred_at"])
+    paginated = events[offset:offset + limit]
+    
+    return paginated, total
 
 
 async def get_per_slide_summary(
