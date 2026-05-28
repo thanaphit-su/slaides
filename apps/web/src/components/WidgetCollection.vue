@@ -1395,7 +1395,7 @@ async function persistDraft(insert: boolean, draft: Partial<Widget>, sourceMessa
         widgetsApi.patch(currentWidget.id, adjustPatch, opts),
       );
       widgets.cache[currentWidget.id] = updated;
-      await appendAiThreadMessage(updated, {
+      void appendAiThreadMessage(updated, {
         role: "assistant",
         message_type: "apply",
         content: {
