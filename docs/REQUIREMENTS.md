@@ -69,9 +69,9 @@ Each requirement is tagged `FR-NNN` (functional) or `NFR-NNN` (non-functional) a
 - **FR-071** — Anonymous interactions store `participant_ref = sha256(email + session_salt)` and **never** the raw email on the row. ✅
 - **FR-072** — Registered audience interactions link by `participant_ref = user_id`. ✅
 - **FR-073** — LLM calls, including Interpret, are logged to `llm_call` with `{purpose, model, prompt_hash, latency_ms, tokens_in, tokens_out}` and no raw prompt text. ✅
-- **FR-074** — After a session ends, the instructor can view a transcript: chronological list + per-slide summary + per-participant summary. [BACKLOG] M5; underlying interaction logs and placement state are already persisted.
-- **FR-075** — The transcript shows interaction frequency, most-frequent terms in interpret calls, all Q&A. [BACKLOG] M5.
-- **FR-076** — Transcripts can be exported as CSV or `.slaides-session` JSON. [BACKLOG] M5.
+- **FR-074** — After a session ends, the instructor can view a transcript: chronological list + per-slide summary + per-participant summary. ✅ Shipped 2026-05-28 via `GET /api/v1/sessions/{id}/transcript`; UI at `apps/web/src/pages/SessionTranscript.vue` with a Presenter-faithful slide pane (using the persisted `placement_states[]` for Loud widgets and `session_slide.results` for native live interactions) plus a Timeline / Per-Slide / Participants sidebar.
+- **FR-075** — The transcript shows interaction frequency, all Q&A. ✅ Shipped 2026-05-28 — per-slide aggregates (`interaction_count`, `by_kind`) and per-participant aggregates (`total_interactions`, `by_kind`) come from server-side grouped `func.count()` queries; questions surface as `question.raised` events in the timeline. Most-frequent terms in `llm.interpret` calls remain client-side analysis (selection / prompt are decrypted server-side before returning when the workspace opted into prompt logging via the new `workspace.log_llm_prompts_for_transcript` toggle).
+- **FR-076** — Transcripts can be exported as CSV or `.slaides-session` JSON. ✅ Shipped 2026-05-28 via `GET /api/v1/sessions/{id}/transcript.csv` and `GET /api/v1/sessions/{id}/transcript.json` (10k-event cap with explicit `truncated` metadata in the export header).
 
 ### Settings
 - **FR-080** — Workspace owner configures OpenAI-compatible endpoint with multi-model library. ✅ Per-workspace settings: base URL, encrypted API key, model library (with advanced params: max_context_window, max_output_tokens, temperature, top_p, frequency_penalty, presence_penalty, supports_image_input), capability-to-model routing

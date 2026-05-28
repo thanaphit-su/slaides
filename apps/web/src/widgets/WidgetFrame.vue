@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import { llmApi } from "@/api/llm";
+import { useSessionStore } from "@/stores/session";
 import { WIDGET_BRIDGE_SOURCE } from "./bridge";
 import { buildThemeStyleBlock, readHostTokens } from "./theme-tokens";
 import type { Widget } from "@/api/types";
@@ -323,6 +324,27 @@ function onBroadcast(ev: Event) {
   send(detail.type, detail.payload);
 }
 
+function onIframeLoad() {
+  // Replay the persisted Loud-widget state from the session store so the
+  // freshly-loaded iframe boots with whatever the host already knew about
+  // this placement. Quiet widgets have no placement state and skip silently.
+  // Pinia may not be active in non-live contexts (editor preview, thumbnail
+  // tests); guard accordingly.
+  let entry;
+  try {
+    entry = useSessionStore().placementStates[props.placementId];
+  } catch {
+    return;
+  }
+  if (!entry) return;
+  send("state", {
+    placement_id: entry.placement_id,
+    state: entry.state,
+    state_version: entry.state_version,
+    closed: entry.closed,
+  });
+}
+
 onMounted(() => {
   window.addEventListener("message", onMessage);
   window.addEventListener("slaides:widget-broadcast", onBroadcast as EventListener);
@@ -349,6 +371,7 @@ watch(
     :title="`Widget · ${widget.kind}`"
     sandbox="allow-scripts allow-forms"
     scrolling="no"
+    @load="onIframeLoad"
     :style="role === 'thumbnail'
       ? {
           border: '0',

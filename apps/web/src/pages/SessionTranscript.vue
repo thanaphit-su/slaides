@@ -3,6 +3,7 @@ import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import { analyticsApi, type TranscriptEvent, type SlideSummary, type ParticipantSummary } from "@/api/analytics";
 import { sessionsApi } from "@/api/sessions";
+import { useSessionStore } from "@/stores/session";
 import type { SessionSnapshot, SessionSlide, Slide } from "@/api/types";
 import Icon from "@/components/Icon.vue";
 import Wordmark from "@/components/Wordmark.vue";
@@ -67,11 +68,18 @@ async function fetchTranscript(append = false) {
   }
 }
 
+const sessionStore = useSessionStore();
+
 async function fetchSnapshot() {
   try {
     snapshot.value = await sessionsApi.get(sessionId);
+    // Hydrate the session store so Loud-widget iframes mounted by SlideStage
+    // boot with the persisted final state (poll tallies, etc.). We skip the
+    // store's `loadHost` because it would also try to open a WebSocket.
+    sessionStore.hydratePlacementStates(snapshot.value?.placement_states || []);
   } catch {
     snapshot.value = null;
+    sessionStore.hydratePlacementStates([]);
   }
 }
 

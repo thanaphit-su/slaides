@@ -55,9 +55,9 @@
 ### Backend — FastAPI
 
 - Python 3.12, `uvicorn` workers behind a reverse proxy.
-- Domain split into routers: `auth`, `workspace`, `decks`, `widgets`, `sessions`, `llm`; slide, participant, and interaction actions are nested under deck/session routers.
+- Domain split into routers: `auth`, `workspace`, `decks`, `widgets`, `sessions`, `llm`, `analytics`; slide, participant, and interaction actions are nested under deck/session routers; transcript / replay / CSV / JSON export endpoints live under `/api/v1/sessions/{id}/{transcript,replay,transcript.csv,transcript.json}` in the `analytics` router.
 - SQLAlchemy 2.x async with Pydantic v2 schemas. Alembic for migrations.
-- No separate worker is implemented today. Transcript summarisation/export workers remain M5/future work.
+- No separate worker is implemented today. Transcript exports run inline (capped at 10k events with explicit `truncated` metadata in the response); a background-worker path remains optional / future work for larger sessions.
 - WebSocket hub: one async task per session that fans out events from Redis pub/sub.
 
 ### Realtime — WebSockets + Redis
@@ -474,7 +474,7 @@ Why iframe and not Web Components? Because v0.1 lets users hand-edit (or LLM-gen
 
 - **API** — One stateless FastAPI service. Horizontally scalable. Behind a reverse proxy (Caddy / nginx) for TLS.
 - **Realtime** — Same FastAPI processes; Redis is the broker.
-- **Worker** — Not implemented yet. Add a worker only when M5 transcript summarisation/export needs asynchronous jobs.
+- **Worker** — Not implemented yet. Transcript / CSV / JSON exports currently run inline in the FastAPI request with a 10k-event cap. Add a worker only when summarisation jobs or large-session exports need to run asynchronously.
 - **DB** — Supabase project (Postgres + auth). Current `.slaides` / `.swidget` exports are returned inline; signed storage URLs are a future option if artifacts grow.
 - **Cache / Pub-Sub** — Redis (managed, e.g. Upstash).
 - **Static frontend** — Vue 3 build deployed to a CDN (e.g. Cloudflare Pages). Talks to the API by configured base URL.
@@ -488,6 +488,12 @@ Why iframe and not Web Components? Because v0.1 lets users hand-edit (or LLM-gen
 ---
 
 ## Migration History
+
+### Migration 0016 (2026-05-28) — Session Events + Transcript LLM Logging Toggle
+- Added `session_event` table for chronological metadata events keyed off a session: `slide.advance` (slide transitions, with `from_id`/`to_id` and `from_kind`/`to_kind`) and `llm.interpret` (selection hash, prompt hash, encrypted selection/prompt when the workspace opted in)
+- `session.id` is a `CASCADE` FK so session deletion cleans up the event log
+- Two indexes: `(session_id, occurred_at)` for chronological scans and `(session_id, event_type)` for type filters
+- Added `workspace.log_llm_prompts_for_transcript` boolean (default false, NOT NULL) — explicit per-workspace opt-in so encrypted selection/prompt fields are only stored when the workspace owner enabled it; encryption uses a transcript-purpose Fernet key (`sha256(root:transcript:workspace_id)`) distinct from the LLM-API-key vault so the two secrets rotate independently
 
 ### Migration 0015 (2026-05-26) — Widget Revisions + AI Threads
 - Added `widget_revision` table for versioned widget source storage

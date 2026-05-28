@@ -331,7 +331,7 @@ Right drawer, 420px. Four tabs:
 
 ### 6.1 Session
 - **Publish & start a session** — primary CTA that begins a new session.
-- **Recordings & transcripts** — explanatory block only in current v0.1 UI. Transcript toggles are M5; interaction logs are already captured for live sessions.
+- **Recordings & transcripts** — transcripts are now shipped (M5). Each finished session is available at `/sessions/{id}/transcript` with a Presenter-style slide pane (kicker, app bar, bottom stepper) and a Timeline / Per-Slide / Participants sidebar; CSV and `.slaides-session` JSON export are wired from the same page. The Settings drawer's LLM tab carries a per-workspace **Log LLM prompts for transcript** toggle so the encrypted `selection_enc` / `prompt_enc` fields on `llm.interpret` events are only persisted with explicit opt-in. Interaction logs are captured for live sessions as before.
 - **Deck access** — read-only sharable link, `Copy link` and `Export .slaides` buttons.
 
 ### 6.2 LLM — Multi-model configuration

@@ -178,11 +178,14 @@ export const useSessionStore = defineStore("session", () => {
     audienceSlideId.value = currentSlideId.value;
   }
 
-  function seedPlacementStates(): void {
-    const list = snapshot.value?.placement_states || [];
+  function hydratePlacementStates(list: PlacementState[]): void {
     const next: Record<string, PlacementState> = {};
     for (const entry of list) next[entry.placement_id] = entry;
     placementStates.value = next;
+  }
+
+  function seedPlacementStates(): void {
+    hydratePlacementStates(snapshot.value?.placement_states || []);
   }
 
   async function loadHost(sessionId: string): Promise<void> {
@@ -641,6 +644,7 @@ export const useSessionStore = defineStore("session", () => {
     audienceSlideId,
     passedSlideIds,
     placementStates,
+    hydratePlacementStates,
     currentSlideId,
     currentSlide,
     isOnSessionSlide,
