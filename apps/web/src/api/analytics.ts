@@ -73,4 +73,10 @@ export const analyticsApi = {
     link.click();
     URL.revokeObjectURL(url);
   },
+
+  deleteTranscript: (sessionId: string) =>
+    api<{ session_id: string; deleted_events: number; message: string }>(
+      `/sessions/${sessionId}/transcript`,
+      { method: "DELETE" }
+    ),
 };

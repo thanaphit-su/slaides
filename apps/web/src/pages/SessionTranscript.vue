@@ -67,6 +67,24 @@ function downloadJson() {
   analyticsApi.downloadTranscriptJson(sessionId);
 }
 
+const showDeleteConfirm = ref(false);
+const deleting = ref(false);
+
+async function deleteTranscript() {
+  deleting.value = true;
+  try {
+    await analyticsApi.deleteTranscript(sessionId);
+    // Reload transcript to show empty state
+    offset.value = 0;
+    await fetchTranscript();
+    showDeleteConfirm.value = false;
+  } catch (err) {
+    error.value = err instanceof Error ? err.message : "Failed to delete transcript";
+  } finally {
+    deleting.value = false;
+  }
+}
+
 function getEventIcon(eventType: string): string {
   if (eventType === "slide.advance") return "arrow_right";
   if (eventType.startsWith("interaction.")) return "poll";
@@ -118,6 +136,10 @@ onMounted(() => {
         <button class="btn btn-sm" @click="downloadJson">
           <Icon name="download" :size="14" />
           JSON
+        </button>
+        <button class="btn btn-sm btn-danger" @click="showDeleteConfirm = true" :disabled="events.length === 0">
+          <Icon name="delete" :size="14" />
+          Delete History
         </button>
       </div>
     </header>
@@ -270,6 +292,28 @@ onMounted(() => {
         </div>
       </div>
     </template>
+    
+    <!-- Delete Confirm Modal -->
+    <div v-if="showDeleteConfirm" class="delete-confirm-modal" @click.self="showDeleteConfirm = false">
+      <div class="delete-confirm-content">
+        <h2 class="delete-confirm-title">Delete Session History?</h2>
+        <p class="delete-confirm-message">
+          This will permanently delete all transcript events (slide advances, LLM interpretations) for this session.
+          The session itself will be preserved, but the transcript will be empty.
+          <br><br>
+          <strong>This action cannot be undone.</strong>
+        </p>
+        <div class="delete-confirm-actions">
+          <button class="btn btn-ghost" @click="showDeleteConfirm = false" :disabled="deleting">
+            Cancel
+          </button>
+          <button class="btn btn-danger" @click="deleteTranscript" :disabled="deleting">
+            <Icon v-if="deleting" name="loader" :size="14" />
+            {{ deleting ? 'Deleting...' : 'Delete History' }}
+          </button>
+        </div>
+      </div>
+    </div>
   </div>
 </template>
 
@@ -584,5 +628,43 @@ onMounted(() => {
 .participant-joined {
   font-size: 11px;
   color: var(--ink-soft);
+}
+
+.delete-confirm-modal {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.5);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+}
+
+.delete-confirm-content {
+  background: var(--paper);
+  padding: 24px;
+  border-radius: var(--r-md);
+  max-width: 400px;
+  box-shadow: 0 4px 24px rgba(0, 0, 0, 0.2);
+}
+
+.delete-confirm-title {
+  font-size: 18px;
+  font-weight: 600;
+  margin-bottom: 12px;
+  color: var(--ink);
+}
+
+.delete-confirm-message {
+  font-size: 14px;
+  color: var(--ink-soft);
+  margin-bottom: 20px;
+  line-height: 1.5;
+}
+
+.delete-confirm-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
 }
 </style>
