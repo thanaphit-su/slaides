@@ -1,0 +1,324 @@
+# SLAIDES — Architecture
+
+## System overview
+
+```
+                      ┌──────────────────────────────────────────────────────┐
+                      │                                                      │
+                      │   Browser (Vue 3 + Vite)                             │
+                      │                                                      │
+                      │   ┌──────────┐  ┌──────────┐  ┌──────────┐          │
+                      │   │ Editor   │  │ Presenter│  │ Audience │          │
+                      │   └────┬─────┘  └────┬─────┘  └────┬─────┘          │
+                      │        │             │             │                │
+                      │   ┌────┴─────────────┴─────────────┴────┐           │
+                      │   │  Widget sandbox  (iframe srcdoc)    │           │
+                      │   │  postMessage bridge `window.slaides`│           │
+                      │   └─────────────────────────────────────┘           │
+                      │                                                      │
+                      └─────────────┬───────────────────────┬────────────────┘
+                                    │ HTTPS                 │ WSS
+                                    ▼                       ▼
+                            ┌──────────────────────────────────────┐
+                            │       FastAPI                         │
+                            │  ┌─────────┐  ┌─────────┐  ┌──────┐  │
+                            │  │ REST    │  │ WS hub  │  │ LLM  │  │
+                            │  │ /api/v1 │  │ /ws/... │  │ proxy│  │
+                            │  └────┬────┘  └────┬────┘  └──┬───┘  │
+                            └───────┼─────────────┼─────────┼──────┘
+                                    │             │         │
+                                    │             ▼         │
+                                    │      ┌──────────┐     │
+                                    │      │  Redis   │     │
+                                    │      │ pub/sub  │     │
+                                    │      │ presence │     │
+                                    │      └──────────┘     │
+                                    ▼                       ▼
+                            ┌────────────────┐     ┌────────────────┐
+                            │   Supabase     │     │  OpenAI-comp.  │
+                            │  PostgreSQL    │     │   endpoint     │
+                            │  + Auth        │     │ (per workspace)│
+                            │  + Storage     │     └────────────────┘
+                            └────────────────┘
+```
+
+## Components
+
+### Frontend — Vue 3 + Vite
+
+- **Routes:** `/signin`, `/workspace`, `/editor/:deck`, `/present/:session`, `/j/:code` (audience landing), `/audience/:session`.
+- **State:** Pinia stores. One store per major domain: `auth`, `workspace`, `editor`, `session`, `widgets`.
+- **Markdown:** `remark` + custom plugin to lift `{{widget:id}}` into a Vue component.
+- **Editor surface:** Monaco for raw-markdown edit-mode; a custom contenteditable layer for inline edits in rendered mode. Slides are split on `H1` boundaries at save.
+- **Realtime:** A single `useSession()` composable owns the WebSocket. It surfaces reactive `slideIdx`, `participants`, `questions`, `interactions`.
+
+### Backend — FastAPI
+
+- Python 3.12, `uvicorn` workers behind a reverse proxy.
+- Domain split into routers: `auth`, `decks`, `slides`, `widgets`, `sessions`, `participants`, `interactions`, `llm`.
+- SQLAlchemy 2.x async with Pydantic v2 schemas. Alembic for migrations.
+- Background tasks via Celery + Redis (transcript summarisation, exports).
+- WebSocket hub: one async task per session that fans out events from Redis pub/sub.
+
+### Realtime — WebSockets + Redis
+
+- Each session has a Redis channel `sess:{id}`.
+- The FastAPI process subscribes once per running session, broadcasts to all attached WS clients.
+- Presence: `SET sess:{id}:participant:{ref} EX 30` heartbeat from each client; expiry counts as leave.
+- This makes the WS layer horizontally scalable — every API node can serve any session, and Redis is the source of truth for live state.
+
+### LLM proxy
+
+- A thin internal router that hides workspace-scoped keys from the browser.
+- POST `/api/v1/llm/complete` with `{ purpose, prompt, context, model_override? }` → streams server-sent events back.
+- Three purposes in v0.1: `inline_write`, `interpret`, `widget_generate`.
+- Per-workspace rate limit (60/min).
+- Logs `{ purpose, prompt_hash, latency_ms, tokens_in, tokens_out }` for cost tracking. Prompt text is NOT logged by default — opt-in per workspace.
+
+### Database — Supabase PostgreSQL
+
+We use Supabase for managed Postgres + auth + storage. Schema lives in `migrations/` regardless — we don't depend on Supabase RPC.
+
+## Data model
+
+```sql
+-- ===== identity =====
+create table workspace (
+  id           uuid primary key,
+  name         text not null,
+  llm_base_url text not null default 'https://api.openai.com/v1',
+  llm_key_enc  bytea,
+  llm_model    text default 'gpt-4.1-mini',
+  llm_caps     jsonb default '{"inline_write":true,"interpret":true,"widget_generate":true,"summarise":true}',
+  created_at   timestamptz default now()
+);
+
+create table app_user (
+  id           uuid primary key,
+  workspace_id uuid references workspace(id),
+  email        text unique not null,
+  display_name text,
+  role         text check (role in ('owner','instructor')) default 'instructor',
+  created_at   timestamptz default now()
+);
+
+-- ===== authoring =====
+create table deck (
+  id           uuid primary key,
+  workspace_id uuid references workspace(id) not null,
+  owner_id     uuid references app_user(id) not null,
+  title        text not null,
+  subtitle     text,
+  cover        text,
+  manifest     jsonb not null default '{}',     -- theme, layout toggles, etc.
+  created_at   timestamptz default now(),
+  updated_at   timestamptz default now()
+);
+
+create table section (
+  id           uuid primary key,
+  deck_id      uuid references deck(id) on delete cascade,
+  title        text not null,
+  position     int not null
+);
+
+create table slide (
+  id           uuid primary key,
+  deck_id      uuid references deck(id) on delete cascade,
+  section_id   uuid references section(id),
+  position     int not null,
+  kicker       text,
+  markdown     text not null,                   -- the source of truth
+  created_at   timestamptz default now(),
+  updated_at   timestamptz default now()
+);
+
+create table widget (
+  id           uuid primary key,
+  workspace_id uuid references workspace(id),
+  name         text not null,
+  kind         text not null,                   -- 'poll' | 'question' | 'plotter' | 'wordcloud' | 'custom' | ...
+  html         text not null,
+  js           text,
+  css          text,
+  props_schema jsonb default '{}',
+  tags         text[] default '{}',
+  version      text default 'v0.1',
+  created_at   timestamptz default now(),
+  updated_at   timestamptz default now()
+);
+
+create table slide_widget (
+  slide_id     uuid references slide(id) on delete cascade,
+  widget_id    uuid references widget(id),
+  placement_id text not null,                   -- the `id` inside `{{widget:id}}` in markdown
+  props        jsonb default '{}',
+  position     int not null,
+  primary key (slide_id, placement_id)
+);
+
+-- ===== live sessions =====
+create table session (
+  id           uuid primary key,
+  deck_id      uuid references deck(id),
+  owner_id     uuid references app_user(id),
+  code         text unique not null,            -- SLD-XXXX-XX
+  salt         text not null,                   -- for anon-hashing
+  started_at   timestamptz default now(),
+  ended_at     timestamptz,
+  current_slide_id uuid references slide(id),
+  config       jsonb default '{}'               -- transcripts on/off, anonymous allowed, etc.
+);
+
+create table participant (
+  id           uuid primary key,
+  session_id   uuid references session(id) on delete cascade,
+  user_id      uuid references app_user(id),    -- nullable for guests
+  email        text,                            -- nullable for fully anonymous
+  display_name text,
+  anon         boolean default false,
+  ref          text not null,                   -- user_id for registered, sha256(email+salt) for guests
+  joined_at    timestamptz default now(),
+  left_at      timestamptz,
+  unique (session_id, ref)
+);
+
+create table interaction_log (
+  id           bigserial primary key,
+  session_id   uuid references session(id) on delete cascade,
+  slide_id     uuid references slide(id),
+  widget_id    uuid references widget(id),
+  participant_ref text not null,                -- never raw email
+  kind         text not null,                   -- 'join' | 'vote' | 'text' | 'slider' | 'interpret' | 'question' | 'answer' | ...
+  payload      jsonb not null,
+  occurred_at  timestamptz default now()
+);
+create index ix_log_session on interaction_log (session_id, occurred_at);
+create index ix_log_widget  on interaction_log (widget_id);
+
+create table question (
+  id           uuid primary key,
+  session_id   uuid references session(id) on delete cascade,
+  slide_id     uuid references slide(id),
+  participant_ref text not null,
+  anon         boolean default false,
+  text         text not null,
+  answered_at  timestamptz,
+  raised_at    timestamptz default now()
+);
+
+-- Session-only interaction slides ("live" polls/questions opened during a session).
+-- These do NOT mutate the deck — they live with the session forever.
+create table session_slide (
+  id           uuid primary key,
+  session_id   uuid references session(id) on delete cascade,
+  parent_slide_id uuid references slide(id),   -- the deck slide the instructor was on
+  position     int not null,                   -- effective position in the session's slide order
+  kind         text not null,                  -- 'poll' | 'question' | 'widget'
+  spec         jsonb not null,                 -- the poll question/options, etc.
+  results      jsonb default '{}',             -- aggregated final state at session end
+  inverted_theme boolean default false,        -- optional legacy/explicit theme inversion; new live interactions inherit current theme
+  opened_at    timestamptz default now(),
+  closed_at    timestamptz
+);
+create index ix_session_slide on session_slide (session_id, position);
+
+-- ===== LLM accounting =====
+create table llm_call (
+  id           bigserial primary key,
+  workspace_id uuid references workspace(id),
+  user_id      uuid references app_user(id),
+  session_id   uuid references session(id),
+  purpose      text not null,                   -- 'inline_write' | 'interpret' | 'widget_generate' | 'summarise'
+  model        text,
+  prompt_hash  text,
+  prompt_text  text,                            -- null unless workspace opts in
+  latency_ms   int,
+  tokens_in    int,
+  tokens_out   int,
+  occurred_at  timestamptz default now()
+);
+```
+
+### Why `participant_ref`?
+
+The interaction log is queried two ways:
+- "Show me everything Sara K. did in this session." → join `participant_ref` to `participant`.
+- "Show me everything anonymous-attendee-#3 did across this session." → group by `participant_ref` without resolving.
+
+Storing the ref instead of `participant_id` keeps anonymous rows perfectly portable when we re-derive the hash for a re-export, and it makes the log queryable even after a participant row is purged on request.
+
+## REST API surface
+
+All routes under `/api/v1`. JSON in/out. Standard pagination via `?cursor=&limit=`.
+
+| Method | Path | Purpose |
+|---|---|---|
+| POST  | `/auth/signin`                  | Instructor login → JWT pair |
+| POST  | `/auth/refresh`                 | Refresh access token |
+| POST  | `/auth/guest`                   | Guest join: { code, email, display_name, anonymous } → session token |
+| GET   | `/workspace`                    | Current workspace (settings, capabilities) |
+| PATCH | `/workspace`                    | Update LLM config / toggles |
+| GET   | `/decks`                        | List decks |
+| POST  | `/decks`                        | Create empty deck |
+| GET   | `/decks/:id`                    | Full deck (sections, slides, slide_widgets) |
+| PATCH | `/decks/:id`                    | Rename, theme, layout |
+| DELETE| `/decks/:id`                    | Delete |
+| POST  | `/decks/:id/duplicate`          | Duplicate |
+| POST  | `/decks/:id/export`             | → `.slaides` zip (signed URL) |
+| POST  | `/decks/import`                 | Upload a `.slaides` zip |
+| PUT   | `/decks/:id/slides/:sid`        | Replace slide markdown (chunked autosave) |
+| POST  | `/decks/:id/slides`             | Insert slide at position |
+| DELETE| `/decks/:id/slides/:sid`        | Delete slide |
+| GET   | `/widgets`                      | Library |
+| POST  | `/widgets`                      | Create widget |
+| PATCH | `/widgets/:id`                  | Edit widget code |
+| DELETE| `/widgets/:id`                  | Delete |
+| POST  | `/widgets/:id/export`           | → `.swidget` file |
+| POST  | `/widgets/import`               | Upload a `.swidget` |
+| POST  | `/sessions`                     | Start a session from a deck → returns code + URL |
+| GET   | `/sessions/:id`                 | Session snapshot |
+| POST  | `/sessions/:id/end`             | End a session |
+| GET   | `/sessions/:id/transcript`      | Full transcript (paginated) |
+| GET   | `/sessions/:id/transcript.csv`  | Export CSV |
+| POST  | `/llm/complete`                 | Stream LLM response (SSE) |
+
+## WebSocket protocol
+
+```
+wss://api.slaides.app/ws/sessions/{id}?token=...
+```
+
+All messages JSON, `{type, ...}` shape. See SPEC §10 for the full list.
+
+**Connection flow:**
+
+1. Client connects with token → server validates, joins to Redis channel.
+2. Server sends `session.state` snapshot.
+3. Bidirectional flow until close.
+4. On disconnect, server fires `participant.left` after 30s grace.
+
+## Widget sandbox
+
+```html
+<iframe sandbox="allow-scripts" srcdoc="<!doctype html><html>...widget..."></iframe>
+```
+
+Before the widget's script runs, the host injects a bridge script (via the srcdoc template) that defines `window.slaides`. All host-bound calls become `parent.postMessage({type, ...}, ORIGIN)`. The host listens on its window and routes the message to the right session WebSocket.
+
+Why iframe and not Web Components? Because v0.1 lets users hand-edit (or LLM-generate) arbitrary HTML/JS. Iframe sandboxing is the simplest container that *guarantees* the widget cannot reach the deck DOM or the parent's storage.
+
+## Deployment shape
+
+- **API** — One stateless FastAPI service. Horizontally scalable. Behind a reverse proxy (Caddy / nginx) for TLS.
+- **Realtime** — Same FastAPI processes; Redis is the broker.
+- **Worker** — A small Celery worker for async exports + transcript summarisation.
+- **DB** — Supabase project (Postgres + auth + signed storage URLs for exports).
+- **Cache / Pub-Sub** — Redis (managed, e.g. Upstash).
+- **Static frontend** — Vue 3 build deployed to a CDN (e.g. Cloudflare Pages). Talks to the API by configured base URL.
+
+## Observability
+
+- Structured JSON logs (`structlog`).
+- Trace IDs propagated from frontend → API → LLM proxy.
+- Key SLO dashboards: session-event latency p95, LLM call cost per workspace, audience join success rate.
