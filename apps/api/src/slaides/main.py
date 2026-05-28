@@ -20,6 +20,7 @@ from .widgets.router import import_router as widgets_import_router
 from .widgets.router import router as widgets_router
 from .widgets.router import slide_router as widgets_slide_router
 from .workspace.router import router as workspace_router
+from .analytics.router import router as analytics_router
 
 
 @asynccontextmanager
@@ -58,6 +59,7 @@ def create_app() -> FastAPI:
     app.include_router(sessions_router, prefix="/api/v1")
     app.include_router(llm_router, prefix="/api/v1")
     app.include_router(sessions_ws_router)
+    app.include_router(analytics_router, prefix="/api/v1")
     return app
 
 

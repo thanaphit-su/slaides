@@ -1093,4 +1093,28 @@ async def stream_completion(
                 tokens_out=tokens_out,
             )
         )
+        
+        # Log interpret event for transcript (only if session_id is set)
+        if body.purpose == "interpret" and session_id:
+            from ..analytics.events import log_llm_interpret
+            
+            # Normalize slide_id from context
+            slide_id = None
+            if body.context.get("slide_id"):
+                try:
+                    slide_id = uuid.UUID(body.context["slide_id"])
+                except ValueError:
+                    pass  # Invalid UUID, leave as None
+            
+            selection = body.context.get("selection", "")
+            await log_llm_interpret(
+                session,
+                session_id,
+                workspace.id,
+                selection=selection,
+                prompt=body.prompt,
+                slide_id=slide_id,
+                log_prompts=workspace.log_llm_prompts_for_transcript,
+            )
+        
         await session.flush()

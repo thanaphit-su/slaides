@@ -5,6 +5,7 @@ import { useAuthStore } from "@/stores/auth";
 import { useWorkspaceStore } from "@/stores/workspace";
 import { sessionsApi } from "@/api/sessions";
 import { saveGuestToken } from "@/stores/session";
+import type { SessionListItem } from "@/api/types";
 import Wordmark from "@/components/Wordmark.vue";
 import Icon from "@/components/Icon.vue";
 import Toggle from "@/components/Toggle.vue";
@@ -33,6 +34,7 @@ const confirmDelete = ref<{ id: string; title: string; slideCount: number } | nu
 const deleting = ref(false);
 const toast = ref<string | null>(null);
 const liveDeckIds = ref<Set<string>>(new Set());
+const sessions = ref<SessionListItem[]>([]);
 let toastTimer = 0;
 
 function showToast(msg: string) {
@@ -64,7 +66,7 @@ async function doDelete() {
 onMounted(() => {
   if (auth.isApproved) {
     void ws.fetch();
-    void fetchLiveSessions();
+    void fetchSessions();
   }
   document.addEventListener("click", onDocumentClick);
 });
@@ -78,14 +80,16 @@ async function createDeck() {
   router.push(`/editor/${deck.id}`);
 }
 
-async function fetchLiveSessions() {
+async function fetchSessions() {
   try {
-    const sessions = await sessionsApi.list();
+    const allSessions = await sessionsApi.list();
+    sessions.value = allSessions;
     liveDeckIds.value = new Set(
-      sessions.filter((session) => !session.ended_at).map((session) => session.deck_id),
+      allSessions.filter((session) => !session.ended_at).map((session) => session.deck_id),
     );
   } catch {
     liveDeckIds.value = new Set();
+    sessions.value = [];
   }
 }
 
@@ -176,6 +180,16 @@ function onDocumentClick(e: MouseEvent) {
 
 function approvalTitle(space: "Decks") {
   return `${space} require admin approval`;
+}
+
+function formatDate(isoString: string): string {
+  const date = new Date(isoString);
+  return date.toLocaleDateString(undefined, {
+    month: "short",
+    day: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
 }
 </script>
 
@@ -433,12 +447,25 @@ function approvalTitle(space: "Decks") {
         </template>
       </template>
 
-      <template v-else>
-        <div class="sessions-placeholder">
-          <h2>Session history</h2>
-          <p>
-            Sessions you joined will appear here after approval-aware history ships in M5.
-          </p>
+      <template v-else-if="tab === 'sessions'">
+        <div v-if="sessions.length === 0" class="sessions-empty">
+          <h2>No sessions yet</h2>
+          <p>Sessions you start or join will appear here.</p>
+        </div>
+        <div v-else class="sessions-list">
+          <div v-for="s in sessions" :key="s.id" class="session-card">
+            <div class="session-info">
+              <h3>Deck {{ s.deck_id.slice(0, 8) }}... · {{ s.code }}</h3>
+              <p class="session-meta">
+                Started {{ formatDate(s.started_at) }}
+                <span v-if="s.ended_at"> · Ended {{ formatDate(s.ended_at) }}</span>
+                <span v-if="!s.ended_at" class="live-badge">LIVE</span>
+              </p>
+            </div>
+            <button class="btn btn-sm" @click="router.push(`/sessions/${s.id}/transcript`)">
+              View Transcript
+            </button>
+          </div>
         </div>
       </template>
     </section>
@@ -677,6 +704,79 @@ function approvalTitle(space: "Decks") {
 }
 .approval-block {
   border-style: dashed;
+}
+.sessions-empty {
+  border: 1px solid var(--rule);
+  border-radius: var(--r-md);
+  background: var(--paper-2);
+  padding: 28px;
+  max-width: 620px;
+  text-align: center;
+}
+.sessions-empty h2 {
+  margin: 0 0 8px;
+  font-family: var(--serif);
+  color: var(--ink);
+  font-size: 22px;
+  font-weight: 600;
+}
+.sessions-empty p {
+  margin: 0;
+  max-width: 56ch;
+  color: var(--ink-soft);
+  font-family: var(--sans);
+  font-size: 13.5px;
+  line-height: 1.55;
+}
+.sessions-list {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+.session-card {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  border: 1px solid var(--rule);
+  border-radius: var(--r-md);
+  background: var(--paper);
+  padding: 16px 20px;
+  transition: box-shadow 0.2s ease, border-color 0.2s ease;
+}
+.session-card:hover {
+  border-color: var(--accent);
+  box-shadow: var(--shadow-2);
+}
+.session-info {
+  flex: 1;
+  min-width: 0;
+}
+.session-info h3 {
+  margin: 0 0 6px;
+  font-family: var(--serif);
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--ink);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.session-meta {
+  margin: 0;
+  font-size: 12px;
+  color: var(--ink-soft);
+  font-family: var(--sans);
+}
+.live-badge {
+  display: inline-block;
+  margin-left: 8px;
+  padding: 2px 6px;
+  background: var(--accent);
+  color: var(--paper);
+  border-radius: var(--r-sm);
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
 }
 .approval-block-icon {
   width: 34px;

@@ -65,7 +65,8 @@ describe("workspace pending approval access", () => {
 
     expect(decksApi.list).not.toHaveBeenCalled();
     expect(wrapper.text()).toContain("Session history");
-    expect(wrapper.text()).toContain("will appear here after approval-aware history ships in M5");
+    expect(wrapper.text()).toContain("No sessions yet");
+    expect(wrapper.text()).toContain("Sessions you start or join will appear here");
 
     await wrapper.get('[data-testid="workspace-tab-decks"]').trigger("click");
     expect(wrapper.text()).toContain("Decks require admin approval");

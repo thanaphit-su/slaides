@@ -170,6 +170,7 @@ export interface Workspace {
   llm_models: LlmModelConfig[];
   llm_capability_models: Record<LlmCapability, string | null>;
   llm_key_configured: boolean;
+  log_llm_prompts_for_transcript: boolean;
 }
 
 export interface WorkspacePatch {
@@ -179,6 +180,7 @@ export interface WorkspacePatch {
   llm_caps?: Record<string, boolean>;
   llm_models?: LlmModelConfig[];
   llm_capability_models?: Partial<Record<LlmCapability, string | null>>;
+  log_llm_prompts_for_transcript?: boolean;
 }
 
 export type LlmPurpose = "inline_write" | "interpret" | "widget_generate" | "summarise";

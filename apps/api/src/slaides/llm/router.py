@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import uuid
+
 from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.responses import StreamingResponse
 from sqlalchemy import select
@@ -39,6 +41,35 @@ async def complete(
         workspace_id = live_session.workspace_id
     else:
         workspace_id = principal.workspace_id
+        # For signed-in users, validate session_id from context (fail closed)
+        if body.context.get("session_id"):
+            try:
+                candidate_session_id = uuid.UUID(body.context["session_id"])
+            except ValueError:
+                raise HTTPException(
+                    status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                    detail="invalid session_id format",
+                )
+            
+            candidate_session = (
+                await session.execute(
+                    select(SessionRow).where(SessionRow.id == candidate_session_id)
+                )
+            ).scalar_one_or_none()
+            
+            if not candidate_session:
+                raise HTTPException(
+                    status_code=status.HTTP_404_NOT_FOUND,
+                    detail="session not found",
+                )
+            
+            if candidate_session.workspace_id != principal.workspace_id:
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail="session does not belong to your workspace",
+                )
+            
+            session_id = candidate_session_id
 
     workspace = (await session.execute(select(Workspace).where(Workspace.id == workspace_id))).scalar_one_or_none()
     if workspace is None:

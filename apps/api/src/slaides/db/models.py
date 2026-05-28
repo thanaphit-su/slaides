@@ -62,6 +62,7 @@ class Workspace(Base):
     llm_model: Mapped[str | None] = mapped_column(String(200), default="gpt-4.1-mini")
     llm_models: Mapped[list] = mapped_column(JSON, default=list)
     llm_capability_models: Mapped[dict] = mapped_column(JSON, default=dict)
+    log_llm_prompts_for_transcript: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
 
@@ -310,6 +311,21 @@ class InteractionLog(Base):
         Index("ix_log_session", "session_id", "occurred_at"),
         Index("ix_log_widget", "widget_id"),
         Index("ix_log_session_slide", "session_slide_id"),
+    )
+
+
+class SessionEvent(Base):
+    __tablename__ = "session_event"
+
+    id: Mapped[int] = mapped_column(BigInteger().with_variant(Integer(), "sqlite"), primary_key=True, autoincrement=True)
+    session_id: Mapped[uuid.UUID] = mapped_column(GUID(), ForeignKey("session.id", ondelete="CASCADE"), nullable=False)
+    event_type: Mapped[str] = mapped_column(String(60), nullable=False)
+    payload: Mapped[dict] = mapped_column(JSON, default=dict, nullable=False)
+    occurred_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+
+    __table_args__ = (
+        Index("ix_session_event_session", "session_id", "occurred_at"),
+        Index("ix_session_event_type", "session_id", "event_type"),
     )
 
 

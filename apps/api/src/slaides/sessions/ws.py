@@ -15,7 +15,7 @@ from sqlalchemy.orm.attributes import flag_modified
 from ..auth import service as auth_service
 from ..auth.supabase import get_supabase_auth
 from ..db.base import get_session_factory
-from ..db.models import AppUser, Participant, SessionSlide
+from ..db.models import AppUser, InteractionLog, Participant, SessionSlide
 from ..db.models import Session as SessionRow
 from ..settings import get_settings
 from . import service as session_service
@@ -585,6 +585,19 @@ async def _handle_iframe_contribute(
             # Defensive: invalid contributions / closed placements drop
             # silently — the audience tab has no useful action to take.
             return True
+        
+        # Log raw contribution to interaction_log for transcript
+        db.add(
+            InteractionLog(
+                session_id=session_id,
+                slide_id=link.slide_id,  # From existing SlideWidget lookup
+                session_slide_id=None,
+                widget_id=widget.id,
+                participant_ref=conn.participant_ref,
+                kind="widget_contribute",
+                payload={"placement_id": placement_id, "value": value},
+            )
+        )
         await db.commit()
 
     await broadcast_widget_state(

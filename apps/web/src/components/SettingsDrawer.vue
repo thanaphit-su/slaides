@@ -59,6 +59,7 @@ const form = reactive({
     widget_generate: "gpt-4.1-mini",
   } as Record<LlmCapability, string | null>,
   keyConfigured: false,
+  logLlmPromptsForTranscript: false,
 });
 
 const advancedModel = computed(() => form.models.find((model) => model.id === advancedModelId.value) || null);
@@ -109,6 +110,7 @@ function applyWorkspace(ws: Workspace) {
   form.models = models.length ? models : [defaultModel()];
   applyCapabilityDefaults(form.models[0].id, ws);
   form.keyConfigured = ws.llm_key_configured;
+  form.logLlmPromptsForTranscript = ws.log_llm_prompts_for_transcript ?? false;
   form.apiKey = "";
   clearKey.value = false;
   advancedModelId.value = null;
@@ -150,6 +152,7 @@ async function save() {
       llm_models: models,
       llm_capability_models: capabilityModels,
       llm_caps: Object.fromEntries(capabilities.map((cap) => [cap.key, capabilityModels[cap.key] !== null])),
+      log_llm_prompts_for_transcript: form.logLlmPromptsForTranscript,
     };
     if (form.apiKey.trim() || clearKey.value) patch.llm_api_key = form.apiKey.trim();
     applyWorkspace(await workspaceApi.patch(patch));
@@ -374,6 +377,17 @@ watch(tab, () => {
                     {{ model.id }}
                   </option>
                 </select>
+              </label>
+            </div>
+
+            <div class="settings-block">
+              <h3>Transcript privacy</h3>
+              <label class="cap-row">
+                <span>
+                  <strong>Log LLM prompts for transcript</strong>
+                  <small>When enabled, selected text and prompts are encrypted and stored for transcript replay.</small>
+                </span>
+                <Toggle v-model="form.logLlmPromptsForTranscript" />
               </label>
             </div>
 

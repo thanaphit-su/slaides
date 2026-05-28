@@ -51,6 +51,13 @@ export const router = createRouter({
       meta: { requiresAuth: true, requiresApproval: true },
       props: true,
     },
+    {
+      path: "/sessions/:sessionId/transcript",
+      name: "session-transcript",
+      component: () => import("@/pages/SessionTranscript.vue"),
+      meta: { requiresAuth: true, requiresApproval: true },
+      props: true,
+    },
   ],
 });
 

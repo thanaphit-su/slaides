@@ -83,6 +83,7 @@ def _workspace_out(ws: Workspace) -> WorkspaceOut:
         llm_models=models,
         llm_capability_models=capability_models,
         llm_key_configured=bool(ws.llm_key_enc),
+        log_llm_prompts_for_transcript=ws.log_llm_prompts_for_transcript,
     )
 
 
@@ -176,6 +177,9 @@ async def patch_workspace(
     if body.llm_api_key is not None:
         key = body.llm_api_key.strip()
         ws.llm_key_enc = encrypt_workspace_secret(ws.id, key) if key else None
+
+    if body.log_llm_prompts_for_transcript is not None:
+        ws.log_llm_prompts_for_transcript = body.log_llm_prompts_for_transcript
 
     await session.flush()
     await session.refresh(ws)

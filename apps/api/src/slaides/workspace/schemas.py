@@ -25,6 +25,7 @@ class WorkspaceOut(BaseModel):
     llm_models: list[LlmModelConfig] = Field(default_factory=list)
     llm_capability_models: dict[str, str | None] = Field(default_factory=dict)
     llm_key_configured: bool = False
+    log_llm_prompts_for_transcript: bool = False
 
 
 class WorkspacePatch(BaseModel):
@@ -34,3 +35,4 @@ class WorkspacePatch(BaseModel):
     llm_caps: dict[str, bool] | None = None
     llm_models: list[LlmModelConfig] | None = None
     llm_capability_models: dict[str, str | None] | None = None
+    log_llm_prompts_for_transcript: bool | None = None
