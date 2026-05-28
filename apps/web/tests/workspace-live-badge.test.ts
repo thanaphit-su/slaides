@@ -10,7 +10,8 @@ import { useAuthStore } from "@/stores/auth";
 const push = vi.fn();
 
 vi.mock("vue-router", () => ({
-  useRouter: () => ({ push }),
+  useRouter: () => ({ push, replace: vi.fn() }),
+  useRoute: () => ({ query: {} }),
 }));
 
 vi.mock("@/api/auth", () => ({
@@ -71,6 +72,9 @@ describe("workspace live deck badges", () => {
         code: "SLD-LIVE-1",
         started_at: "2026-05-22T00:00:00Z",
         ended_at: null,
+        deck_title: "Loud deck",
+        participant_count: 3,
+        interaction_count: 7,
       },
       {
         id: "sess-2",
@@ -78,6 +82,9 @@ describe("workspace live deck badges", () => {
         code: "SLD-END-1",
         started_at: "2026-05-21T00:00:00Z",
         ended_at: "2026-05-21T01:00:00Z",
+        deck_title: "Quiet deck",
+        participant_count: 2,
+        interaction_count: 0,
       },
     ]);
     vi.mocked(authApi.signIn).mockResolvedValue({

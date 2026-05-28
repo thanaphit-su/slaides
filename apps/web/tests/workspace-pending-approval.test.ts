@@ -9,7 +9,8 @@ import { useAuthStore } from "@/stores/auth";
 const push = vi.fn();
 
 vi.mock("vue-router", () => ({
-  useRouter: () => ({ push }),
+  useRouter: () => ({ push, replace: vi.fn() }),
+  useRoute: () => ({ query: {} }),
 }));
 
 vi.mock("@/api/auth", () => ({

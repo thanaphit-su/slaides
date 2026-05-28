@@ -65,6 +65,9 @@ class SessionListItem(BaseModel):
     code: str
     started_at: datetime
     ended_at: datetime | None
+    deck_title: str = ""
+    participant_count: int = 0
+    interaction_count: int = 0
 
 
 class SessionPublic(BaseModel):

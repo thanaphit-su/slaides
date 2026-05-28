@@ -28,6 +28,7 @@ export const sessionsApi = {
       headers: { Authorization: `Bearer ${guestToken}` },
     }),
   end: (id: string) => api<SessionSnapshot>(`/sessions/${id}/end`, { method: "POST" }),
+  remove: (id: string) => api<void>(`/sessions/${id}`, { method: "DELETE" }),
   advance: (id: string, slideId: string, isSessionSlide = false) =>
     api<SessionSnapshot>(`/sessions/${id}/advance`, {
       method: "POST",

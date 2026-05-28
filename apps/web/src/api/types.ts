@@ -191,6 +191,9 @@ export interface SessionListItem {
   code: string;
   started_at: string;
   ended_at: string | null;
+  deck_title: string;
+  participant_count: number;
+  interaction_count: number;
 }
 
 export interface SessionPublic {

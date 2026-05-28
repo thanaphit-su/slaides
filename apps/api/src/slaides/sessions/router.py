@@ -5,13 +5,13 @@ import secrets
 import uuid
 
 from fastapi import APIRouter, Depends, HTTPException, Response, status
-from sqlalchemy import select
+from sqlalchemy import delete, func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..auth.deps import GuestPrincipal, current_guest, current_user
 from ..auth.service import issue_guest
 from ..db.deps import db_session
-from ..db.models import AppUser, Deck, Participant, Slide
+from ..db.models import AppUser, Deck, InteractionLog, LlmCall, Participant, Slide
 from ..db.models import Session as SessionRow
 from ..decks import service as deck_service
 from ..decks.schemas import SectionOut, SlideOut, SlideWidgetEmbed
@@ -113,13 +113,37 @@ async def _snapshot(session: AsyncSession, row: SessionRow) -> SessionSnapshot:
     )
 
 
+def _participant_count_subq():
+    return (
+        select(func.count(Participant.id))
+        .where(Participant.session_id == SessionRow.id)
+        .correlate(SessionRow)
+        .scalar_subquery()
+    )
+
+
+def _interaction_count_subq():
+    return (
+        select(func.count(InteractionLog.id))
+        .where(InteractionLog.session_id == SessionRow.id)
+        .correlate(SessionRow)
+        .scalar_subquery()
+    )
+
+
 @router.get("", response_model=list[SessionListItem])
 async def list_sessions(
     user: AppUser = Depends(current_user),
     session: AsyncSession = Depends(db_session),
 ) -> list[SessionListItem]:
     rows = await session.execute(
-        select(SessionRow)
+        select(
+            SessionRow,
+            Deck.title.label("deck_title"),
+            _participant_count_subq().label("participant_count"),
+            _interaction_count_subq().label("interaction_count"),
+        )
+        .join(Deck, Deck.id == SessionRow.deck_id)
         .where(
             SessionRow.workspace_id == user.workspace_id,
             SessionRow.owner_id == user.id,
@@ -129,7 +153,19 @@ async def list_sessions(
         )
         .order_by(SessionRow.started_at.desc())
     )
-    return [SessionListItem.model_validate(r) for r in rows.scalars()]
+    return [
+        SessionListItem(
+            id=row.Session.id,
+            deck_id=row.Session.deck_id,
+            code=row.Session.code,
+            started_at=row.Session.started_at,
+            ended_at=row.Session.ended_at,
+            deck_title=row.deck_title or "",
+            participant_count=row.participant_count or 0,
+            interaction_count=row.interaction_count or 0,
+        )
+        for row in rows.all()
+    ]
 
 
 @router.get("/active", response_model=SessionListItem | None)
@@ -238,6 +274,31 @@ async def end_session_endpoint(
 
     await broadcast_session_ended(row.id)
     return snapshot
+
+
+@router.delete("/{session_id}", status_code=status.HTTP_204_NO_CONTENT, response_class=Response)
+async def delete_session_endpoint(
+    session_id: uuid.UUID,
+    user: AppUser = Depends(current_user),
+    session: AsyncSession = Depends(db_session),
+) -> Response:
+    """Permanently delete a session and all its data.
+
+    Cascades remove participants, interactions, questions, session_event,
+    session_slide and placement_state. LlmCall.session_id is NULL-ed out
+    so billing/audit records survive without dangling FKs.
+    """
+    row = await _load_owned(session, user, session_id)
+    if row.ended_at is None:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="end the session before deleting it",
+        )
+    await session.execute(
+        update(LlmCall).where(LlmCall.session_id == session_id).values(session_id=None)
+    )
+    await session.execute(delete(SessionRow).where(SessionRow.id == session_id))
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
 @router.post("/{session_id}/advance", response_model=SessionSnapshot)

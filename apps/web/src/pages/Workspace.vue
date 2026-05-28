@@ -1,6 +1,6 @@
 <script setup lang="ts">
-import { onBeforeUnmount, onMounted, ref } from "vue";
-import { useRouter } from "vue-router";
+import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
+import { useRoute, useRouter } from "vue-router";
 import { useAuthStore } from "@/stores/auth";
 import { useWorkspaceStore } from "@/stores/workspace";
 import { sessionsApi } from "@/api/sessions";
@@ -17,8 +17,28 @@ import SettingsDrawer from "@/components/SettingsDrawer.vue";
 const auth = useAuthStore();
 const ws = useWorkspaceStore();
 const router = useRouter();
+const route = useRoute();
 
-const tab = ref<"decks" | "sessions">(auth.isApproved ? "decks" : "sessions");
+type WorkspaceTab = "decks" | "sessions";
+function asTab(v: unknown): WorkspaceTab | null {
+  return v === "decks" || v === "sessions" ? v : null;
+}
+
+const tab = ref<WorkspaceTab>(asTab(route.query.tab) ?? (auth.isApproved ? "decks" : "sessions"));
+
+watch(tab, (next) => {
+  if (route.query.tab !== next) {
+    void router.replace({ query: { ...route.query, tab: next } });
+  }
+});
+
+watch(
+  () => route.query.tab,
+  (next) => {
+    const v = asTab(next);
+    if (v && v !== tab.value) tab.value = v;
+  },
+);
 const fileInput = ref<HTMLInputElement | null>(null);
 const dragging = ref(false);
 const settingsOpen = ref(false);
@@ -32,6 +52,8 @@ const joinBusy = ref(false);
 const joinNotice = ref<string | null>(null);
 const confirmDelete = ref<{ id: string; title: string; slideCount: number } | null>(null);
 const deleting = ref(false);
+const confirmSessionDelete = ref<{ id: string; deckTitle: string; code: string } | null>(null);
+const deletingSession = ref(false);
 const toast = ref<string | null>(null);
 const liveDeckIds = ref<Set<string>>(new Set());
 const sessions = ref<SessionListItem[]>([]);
@@ -63,10 +85,38 @@ async function doDelete() {
   }
 }
 
+function askSessionDelete(s: SessionListItem) {
+  if (!s.ended_at) return;
+  confirmSessionDelete.value = {
+    id: s.id,
+    deckTitle: s.deck_title || "Untitled deck",
+    code: s.code,
+  };
+}
+
+async function doSessionDelete() {
+  if (!confirmSessionDelete.value) return;
+  const id = confirmSessionDelete.value.id;
+  deletingSession.value = true;
+  try {
+    await sessionsApi.remove(id);
+    sessions.value = sessions.value.filter((x) => x.id !== id);
+    showToast("Session deleted");
+    confirmSessionDelete.value = null;
+  } catch (err) {
+    showToast(err instanceof Error ? err.message : "Could not delete session.");
+  } finally {
+    deletingSession.value = false;
+  }
+}
+
 onMounted(() => {
   if (auth.isApproved) {
     void ws.fetch();
     void fetchSessions();
+  }
+  if (!asTab(route.query.tab)) {
+    void router.replace({ query: { ...route.query, tab: tab.value } });
   }
   document.addEventListener("click", onDocumentClick);
 });
@@ -191,6 +241,49 @@ function formatDate(isoString: string): string {
     minute: "2-digit",
   });
 }
+
+function sessionDurationMs(s: SessionListItem): number {
+  if (!s.ended_at) return Date.now() - new Date(s.started_at).getTime();
+  return new Date(s.ended_at).getTime() - new Date(s.started_at).getTime();
+}
+
+function formatDuration(ms: number): string {
+  const totalSeconds = Math.max(0, Math.round(ms / 1000));
+  if (totalSeconds < 60) return `${totalSeconds}s`;
+  const minutes = Math.round(totalSeconds / 60);
+  if (minutes < 60) return `${minutes} min`;
+  const hours = Math.floor(minutes / 60);
+  const remMin = minutes % 60;
+  return remMin === 0 ? `${hours}h` : `${hours}h ${remMin}m`;
+}
+
+// Sessions where start == end (within a few seconds) are abandoned/instant-ended.
+// Hide by default; user can opt in.
+const ZERO_DURATION_THRESHOLD_MS = 5_000;
+const showZeroLength = ref(false);
+
+function isMeaningfulSession(s: SessionListItem): boolean {
+  if (!s.ended_at) return true;
+  return sessionDurationMs(s) > ZERO_DURATION_THRESHOLD_MS;
+}
+
+const filteredSessions = computed(() =>
+  showZeroLength.value ? sessions.value : sessions.value.filter(isMeaningfulSession),
+);
+
+// How many would be hidden when the toggle is off, regardless of current state.
+const hideableSessionCount = computed(
+  () => sessions.value.filter((s) => !isMeaningfulSession(s)).length,
+);
+
+const hiddenSessionCount = computed(
+  () => sessions.value.length - filteredSessions.value.length,
+);
+
+const heroKicker = computed(() => {
+  if (!auth.isApproved) return "Instructor access";
+  return tab.value === "sessions" ? "Sessions" : "Library";
+});
 </script>
 
 <template>
@@ -363,16 +456,20 @@ function formatDate(isoString: string): string {
 
     <section :style="{ padding: '56px 32px 24px', maxWidth: '1240px', width: '100%', margin: '0 auto' }">
       <div class="t-kicker" :style="{ marginBottom: '14px' }">
-        {{ auth.isApproved ? "Library" : "Instructor access" }} · {{ auth.user?.display_name || "You" }}
+        {{ heroKicker }} · {{ auth.user?.display_name || "You" }}
       </div>
       <div class="t-h1" :style="{ marginBottom: '14px' }">
-        <template v-if="auth.isApproved">The decks you've been <em>writing</em>.</template>
+        <template v-if="auth.isApproved && tab === 'decks'">The decks you've been <em>writing</em>.</template>
+        <template v-else-if="auth.isApproved && tab === 'sessions'">The sessions you've <em>run</em>.</template>
         <template v-else>Session history.</template>
       </div>
       <p class="t-lede" :style="{ maxWidth: '62ch', marginBottom: '32px' }">
-        <template v-if="auth.isApproved">
+        <template v-if="auth.isApproved && tab === 'decks'">
           Open one to keep editing. Import a deck from another project at any time. Workspace-level views for
           widgets and past sessions are coming.
+        </template>
+        <template v-else-if="auth.isApproved && tab === 'sessions'">
+          Every session you've started shows up here — open one for the timeline, audience interactions, and exportable transcript.
         </template>
         <template v-else>
           Your instructor account is waiting for admin approval. Until then, only session history is available.
@@ -452,21 +549,71 @@ function formatDate(isoString: string): string {
           <h2>No sessions yet</h2>
           <p>Sessions you start or join will appear here.</p>
         </div>
-        <div v-else class="sessions-list">
-          <div v-for="s in sessions" :key="s.id" class="session-card">
-            <div class="session-info">
-              <h3>Deck {{ s.deck_id.slice(0, 8) }}... · {{ s.code }}</h3>
-              <p class="session-meta">
-                Started {{ formatDate(s.started_at) }}
-                <span v-if="s.ended_at"> · Ended {{ formatDate(s.ended_at) }}</span>
-                <span v-if="!s.ended_at" class="live-badge">LIVE</span>
-              </p>
-            </div>
-            <button class="btn btn-sm" @click="router.push(`/sessions/${s.id}/transcript`)">
-              View Transcript
-            </button>
+        <template v-else>
+          <div
+            v-if="filteredSessions.length === 0"
+            class="sessions-empty"
+          >
+            <h2>Nothing to show</h2>
+            <p>
+              {{ hiddenSessionCount }} short / empty
+              {{ hiddenSessionCount === 1 ? "session is" : "sessions are" }}
+              hidden.
+              <button class="link-btn" @click="showZeroLength = true">Show them</button>
+            </p>
           </div>
-        </div>
+          <div v-else class="sessions-list">
+            <div
+              v-for="s in filteredSessions"
+              :key="s.id"
+              class="session-card"
+              @click="router.push(`/sessions/${s.id}/transcript`)"
+            >
+              <div class="session-info">
+                <h3 :title="s.deck_title || 'Untitled deck'">
+                  {{ s.deck_title || "Untitled deck" }}
+                  <span v-if="!s.ended_at" class="live-badge">LIVE</span>
+                </h3>
+                <p class="session-meta">
+                  <span>{{ formatDate(s.started_at) }}</span>
+                  <span class="meta-sep">·</span>
+                  <span>{{ formatDuration(sessionDurationMs(s)) }}</span>
+                  <span class="meta-sep">·</span>
+                  <span>{{ s.participant_count }} {{ s.participant_count === 1 ? "participant" : "participants" }}</span>
+                  <span class="meta-sep">·</span>
+                  <span>{{ s.interaction_count }} {{ s.interaction_count === 1 ? "interaction" : "interactions" }}</span>
+                  <span class="meta-sep">·</span>
+                  <code class="session-code">{{ s.code }}</code>
+                </p>
+              </div>
+              <button
+                class="btn btn-sm btn-icon btn-danger-ghost"
+                :title="s.ended_at ? 'Delete session permanently' : 'End the session first'"
+                :disabled="!s.ended_at"
+                @click.stop="askSessionDelete(s)"
+              >
+                <Icon name="trash" :size="14" />
+              </button>
+            </div>
+            <div v-if="hideableSessionCount > 0" class="sessions-hidden-row">
+              <button
+                v-if="!showZeroLength"
+                class="link-btn"
+                @click="showZeroLength = true"
+              >
+                Show {{ hideableSessionCount }} short / empty
+                {{ hideableSessionCount === 1 ? "session" : "sessions" }}
+              </button>
+              <button
+                v-else
+                class="link-btn"
+                @click="showZeroLength = false"
+              >
+                Hide short / empty sessions
+              </button>
+            </div>
+          </div>
+        </template>
       </template>
     </section>
 
@@ -501,6 +648,29 @@ function formatDate(isoString: string): string {
           <button class="btn btn-sm" :disabled="deleting" @click="confirmDelete = null">Cancel</button>
           <button class="btn btn-sm btn-danger" :disabled="deleting" @click="doDelete">
             {{ deleting ? "Deleting…" : "Delete deck" }}
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <div
+      v-if="confirmSessionDelete"
+      class="delete-backdrop"
+      @click.self="confirmSessionDelete = null"
+    >
+      <div class="delete-modal scale-in">
+        <h3>Delete session?</h3>
+        <p>
+          The session <strong>{{ confirmSessionDelete.deckTitle }}</strong>
+          (<code>{{ confirmSessionDelete.code }}</code>) and all of its participants,
+          poll votes, questions, and transcript will be permanently removed.
+          <br><br>
+          The deck itself is not affected. This action cannot be undone.
+        </p>
+        <div class="delete-actions">
+          <button class="btn btn-sm" :disabled="deletingSession" @click="confirmSessionDelete = null">Cancel</button>
+          <button class="btn btn-sm btn-danger" :disabled="deletingSession" @click="doSessionDelete">
+            {{ deletingSession ? "Deleting…" : "Delete session" }}
           </button>
         </div>
       </div>
@@ -710,7 +880,6 @@ function formatDate(isoString: string): string {
   border-radius: var(--r-md);
   background: var(--paper-2);
   padding: 28px;
-  max-width: 620px;
   text-align: center;
 }
 .sessions-empty h2 {
@@ -722,7 +891,6 @@ function formatDate(isoString: string): string {
 }
 .sessions-empty p {
   margin: 0;
-  max-width: 56ch;
   color: var(--ink-soft);
   font-family: var(--sans);
   font-size: 13.5px;
@@ -737,10 +905,12 @@ function formatDate(isoString: string): string {
   display: flex;
   align-items: center;
   justify-content: space-between;
+  gap: 16px;
   border: 1px solid var(--rule);
   border-radius: var(--r-md);
   background: var(--paper);
-  padding: 16px 20px;
+  padding: 14px 18px;
+  cursor: pointer;
   transition: box-shadow 0.2s ease, border-color 0.2s ease;
 }
 .session-card:hover {
@@ -766,6 +936,38 @@ function formatDate(isoString: string): string {
   font-size: 12px;
   color: var(--ink-soft);
   font-family: var(--sans);
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+.session-meta .meta-sep {
+  color: var(--rule);
+}
+.session-code {
+  font-family: var(--mono, ui-monospace, monospace);
+  font-size: 11px;
+  background: var(--paper-2);
+  padding: 1px 6px;
+  border-radius: var(--r-sm);
+  color: var(--ink-mute, var(--ink-soft));
+}
+.sessions-hidden-row {
+  text-align: center;
+  padding: 4px 0;
+}
+.link-btn {
+  background: transparent;
+  border: none;
+  padding: 0;
+  color: var(--accent);
+  font-family: var(--sans);
+  font-size: 13px;
+  cursor: pointer;
+  text-decoration: underline;
+}
+.link-btn:hover {
+  color: var(--ink);
 }
 .live-badge {
   display: inline-block;
@@ -854,5 +1056,28 @@ function formatDate(isoString: string): string {
 }
 .btn-danger:hover:not(:disabled) {
   filter: brightness(0.95);
+}
+.btn-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  flex-shrink: 0;
+}
+.btn-danger-ghost {
+  background: transparent;
+  color: var(--ink-soft);
+  border: 1px solid var(--rule);
+}
+.btn-danger-ghost:hover:not(:disabled) {
+  color: var(--err, #c2410c);
+  border-color: var(--err, #c2410c);
+  background: var(--paper-2);
+}
+.btn-danger-ghost:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
 }
 </style>

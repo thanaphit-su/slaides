@@ -460,6 +460,9 @@ async function onStartSession() {
       code: session.code,
       started_at: session.started_at,
       ended_at: session.ended_at,
+      deck_title: editor.deck?.title || "",
+      participant_count: 0,
+      interaction_count: 0,
     };
     await router.push(`/present/${session.id}`);
   } catch (err) {
