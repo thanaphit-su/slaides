@@ -79,17 +79,34 @@ async def get_merged_transcript(
     """
     limit = min(limit, max_limit)
     
-    # Get total count via UNION ALL subquery - cast all IDs to string for type compatibility
-    count_query = sa.union_all(
-        select(sa.cast(SessionEvent.id, sa.String)),
-        select(sa.cast(InteractionLog.id, sa.String)),
-        select(sa.cast(Question.id, sa.String)),
-        select(sa.cast(SessionSlide.id, sa.String)),
-    ).alias("all_ids")
-    
-    total = (await session.execute(
-        select(func.count()).select_from(count_query)
+    # Get total count - sum of four scoped counts (cheaper than UNION ALL over full tables)
+    se_count = (await session.execute(
+        select(func.count()).select_from(SessionEvent).where(SessionEvent.session_id == session_id)
     )).scalar() or 0
+    
+    il_count = (await session.execute(
+        select(func.count()).select_from(InteractionLog).where(InteractionLog.session_id == session_id)
+    )).scalar() or 0
+    
+    q_count = (await session.execute(
+        select(func.count()).select_from(Question).where(Question.session_id == session_id)
+    )).scalar() or 0
+    
+    # Session slides: count opened + closed events (closed_at rows count as separate events)
+    ss_opened_count = (await session.execute(
+        select(func.count()).select_from(SessionSlide).where(
+            SessionSlide.session_id == session_id
+        )
+    )).scalar() or 0
+    
+    ss_closed_count = (await session.execute(
+        select(func.count()).select_from(SessionSlide).where(
+            SessionSlide.session_id == session_id,
+            SessionSlide.closed_at.isnot(None)
+        )
+    )).scalar() or 0
+    
+    total = se_count + il_count + q_count + ss_opened_count + ss_closed_count
     
     # Build UNION ALL with explicit type casts for PostgreSQL compatibility
     # All columns must match types across union branches
@@ -127,18 +144,6 @@ async def get_merged_transcript(
         sa.cast(sa.literal(None, sa.String), sa.String).label("parent_slide_id"),
     ).where(InteractionLog.session_id == session_id)
     
-    # Build JSON payload - use jsonb_build_object for PostgreSQL (variadic key-value)
-    # For SQLite, json_object with same syntax works
-    q_payload = sa.cast(
-        sa.func.jsonb_build_object(
-            'question_id', sa.cast(Question.id, sa.String),
-            'text', Question.text,
-            'participant_ref', Question.participant_ref,
-            'anon', Question.anon,
-            'slide_id', sa.cast(Question.slide_id, sa.String)
-        ), sa.JSON
-    )
-    
     # For question rows, we'll build payload in Python (database-agnostic)
     q_subq = select(
         Question.raised_at.label("occurred_at"),
@@ -157,11 +162,11 @@ async def get_merged_transcript(
         sa.cast(sa.literal(None, sa.String), sa.String).label("parent_slide_id"),
     ).where(Question.session_id == session_id)
     
-    # For session_slide rows, we'll build payload in Python (database-agnostic)
-    ss_subq = select(
+    # Session slide opened events
+    ss_open_subq = select(
         SessionSlide.opened_at.label("occurred_at"),
         sa.literal("interaction.opened").label("event_type"),
-        sa.cast(sa.literal(None, sa.JSON), sa.JSON).label("payload"),  # Built in Python
+        sa.cast(sa.literal(None, sa.JSON), sa.JSON).label("payload"),
         sa.literal("session_slide").label("source"),
         sa.cast(sa.literal(None, sa.String), sa.String).label("participant_ref"),
         sa.cast(sa.literal(None, sa.String), sa.String).label("slide_id"),
@@ -175,8 +180,29 @@ async def get_merged_transcript(
         sa.cast(SessionSlide.parent_slide_id, sa.String).label("parent_slide_id"),
     ).where(SessionSlide.session_id == session_id)
     
+    # Session slide closed events (only for slides that have closed_at)
+    ss_closed_subq = select(
+        SessionSlide.closed_at.label("occurred_at"),
+        sa.literal("interaction.closed").label("event_type"),
+        sa.cast(sa.literal(None, sa.JSON), sa.JSON).label("payload"),
+        sa.literal("session_slide").label("source"),
+        sa.cast(sa.literal(None, sa.String), sa.String).label("participant_ref"),
+        sa.cast(sa.literal(None, sa.String), sa.String).label("slide_id"),
+        sa.cast(SessionSlide.id, sa.String).label("session_slide_id"),
+        sa.cast(sa.literal(None, sa.String), sa.String).label("widget_id"),
+        sa.cast(sa.literal(None, sa.String), sa.String).label("question_id"),
+        sa.cast(sa.literal(None, sa.String), sa.String).label("question_text"),
+        sa.cast(sa.literal(None, sa.Boolean), sa.Boolean).label("anon"),
+        SessionSlide.kind,
+        SessionSlide.spec,
+        sa.cast(SessionSlide.parent_slide_id, sa.String).label("parent_slide_id"),
+    ).where(
+        SessionSlide.session_id == session_id,
+        SessionSlide.closed_at.isnot(None)
+    )
+    
     # Union all and paginate in SQL
-    union_query = sa.union_all(se_subq, il_subq, q_subq, ss_subq)
+    union_query = sa.union_all(se_subq, il_subq, q_subq, ss_open_subq, ss_closed_subq)
     ordered = union_query.order_by(sa.column("occurred_at"))
     paginated_query = ordered.limit(limit).offset(offset)
     
