@@ -2,7 +2,7 @@
 
 You — the next agent or human engineering team — own getting SLAIDES from prototype to running v0.1. This file tells you what to build, in what order, and where each design decision was already made.
 
-The historical **prototype** (`slaides.html` + `src/*.jsx`) is a visual reference, not the current implementation source of truth. Current behavior lives in `apps/web` and `apps/api`; the **specs** in `docs/SPEC.md`, **requirements** in `docs/REQUIREMENTS.md`, and **architecture** in `docs/ARCHITECTURE.md` define behavior, contracts, and infra. **Design tokens** are in `docs/DESIGN.md`.
+The historical **prototype** (`.draft/prototype/slaides.html` + `.draft/prototype/src/*.jsx`) is a visual reference, not the current implementation source of truth. Current behavior lives in `apps/web` and `apps/api`; the **specs** in `docs/SPEC.md`, **requirements** in `docs/REQUIREMENTS.md`, and **architecture** in `docs/ARCHITECTURE.md` define behavior, contracts, and infra. **Design tokens** are in `docs/DESIGN.md`.
 
 ---
 
@@ -374,23 +374,23 @@ Each milestone is a working slice. Don't move on until the previous is genuinely
 
 ## How to read the prototype
 
-Each `src/*.jsx` file maps to a Vue page or composable. The translation guide (✅ = ported/implemented, ⚠️ = partially implemented):
+Each archived `.draft/prototype/src/*.jsx` file maps to a Vue page or composable. The translation guide (✅ = ported/implemented, ⚠️ = partially implemented):
 
 | Prototype file | Vue 3 target | Status |
 |---|---|---|
-| `src/theme.css` | `apps/web/src/theme/tokens.css` (CSS custom properties — identical, byte-for-byte copy) | ✅ |
-| `src/data.jsx` | Seed data in `apps/api/scripts/seed.py` (Field Notes deck + 4 widgets + placements) | ✅ |
-| `src/components.jsx` | `apps/web/src/components/{Icon,Wordmark,Toggle,DeckCover,Backdrop}.vue` | ✅ (Drawer, LiveDot, Tooltip still inline-styled rather than promoted to primitives) |
-| `src/signin.jsx` | `apps/web/src/pages/Signin.vue` | ✅ instructor flow + real guest-join wired to `POST /auth/guest` |
-| `src/workspace.jsx` | `apps/web/src/pages/Workspace.vue` + `DeckCard.vue` + `DeckList.vue` + `NewDeckCard.vue` | ✅ Decks tab functional; Widgets/Sessions tabs are placeholders |
-| `src/editor.jsx` | `apps/web/src/pages/Editor.vue` + `SidebarOpen.vue` + `SidebarCollapsed.vue` + `SlideCanvas.vue` + `SlideStepper.vue` + `AddSlideRibbon.vue` + `AddWidgetRibbon.vue` + `markdown/render.ts` | ✅ shell + canvas + sidebar + stepper + autosave + inline widget mounting + Start-session wired + arrow-key slide navigation |
-| `src/editor.jsx` (context menu, interpret popover, inline chat, WYSIWYG toolbar) | `Editor.vue` + `SlideCanvas.vue` + `InterpretPopover.vue` | ⚠️ editor context-menu + compact AI selection toolbar shipped; full WYSIWYG toolbar and inline chat still open |
-| `src/presenter.jsx` | `apps/web/src/pages/Presenter.vue` + `QuestionsRail.vue` + `AnswerModerationRail.vue` + `OpenInteractionFab.vue` + `LiveInteractionSheet.vue` + `LivePollSlide.vue` + `LiveQuestionSlide.vue` + `LiveRandomAudienceSlide.vue` + `SlideStage.vue` | ✅ M3 live/native interactions + M4 AI interpretation |
-| `src/audience.jsx` | `apps/web/src/pages/Audience.vue` + `RaiseQuestionSheet.vue` + `LivePollSlide.vue` + `LiveQuestionSlide.vue` + `LiveRandomAudienceSlide.vue` + `SlideStage.vue` | ✅ M3 live/native interactions + M4 AI interpretation + passed-slide stepper / arrow navigation |
-| `src/widgets.jsx` | `apps/web/src/widgets/WidgetFrame.vue` + `bridge.ts` + `components/WidgetCollection.vue` + onboarding widgets in `apps/api/src/slaides/onboarding/widgets/` | ✅ M3 WS broadcast relay + M4 non-audience LLM relay / AI generation / image attachments |
-| `src/widget-adjust.jsx` | `apps/web/src/components/WidgetCollection.vue` adjust mode + sidebar Code tab | ✅ Adjust moved out of modal into right sidebar chat; code source is edited inline with explicit Save |
-| `src/settings.jsx` | `apps/web/src/components/SettingsDrawer.vue` | ✅ LLM model library + capability routing; Session/Display/Account remain M5 polish |
-| `src/app.jsx` | `apps/web/src/router.ts` | ✅ for shipped routes; new routes added as later milestones land |
+| `.draft/prototype/src/theme.css` | `apps/web/src/theme/tokens.css` (CSS custom properties) | ✅ |
+| `.draft/prototype/src/data.jsx` | Seed data in `apps/api/scripts/seed.py` and onboarding package | ✅ |
+| `.draft/prototype/src/components.jsx` | `apps/web/src/components/{Icon,Wordmark,Toggle,DeckCover,Backdrop}.vue` | ✅ (Drawer, LiveDot, Tooltip still inline-styled rather than promoted to primitives) |
+| `.draft/prototype/src/signin.jsx` | `apps/web/src/pages/Signin.vue` | ✅ instructor flow + real guest-join wired to `POST /auth/guest` |
+| `.draft/prototype/src/workspace.jsx` | `apps/web/src/pages/Workspace.vue` + `DeckCard.vue` + `DeckList.vue` + `NewDeckCard.vue` | ✅ |
+| `.draft/prototype/src/editor.jsx` | `apps/web/src/pages/Editor.vue` + `SidebarOpen.vue` + `SidebarCollapsed.vue` + `SlideCanvas.vue` + `SlideStepper.vue` + `AddSlideRibbon.vue` + `AddWidgetRibbon.vue` + `markdown/render.ts` | ✅ shell + canvas + sidebar + stepper + autosave + inline widget mounting + Start-session wired + arrow-key slide navigation |
+| `.draft/prototype/src/editor.jsx` (context menu, interpret popover, inline chat, WYSIWYG toolbar) | `Editor.vue` + `SlideCanvas.vue` + `InterpretPopover.vue` | ⚠️ editor context-menu + compact AI selection toolbar shipped; full WYSIWYG toolbar and inline chat still open |
+| `.draft/prototype/src/presenter.jsx` | `apps/web/src/pages/Presenter.vue` + `QuestionsRail.vue` + `AnswerModerationRail.vue` + `OpenInteractionFab.vue` + `LiveInteractionSheet.vue` + `LivePollSlide.vue` + `LiveQuestionSlide.vue` + `LiveRandomAudienceSlide.vue` + `SlideStage.vue` | ✅ M3 live/native interactions + M4 AI interpretation |
+| `.draft/prototype/src/audience.jsx` | `apps/web/src/pages/Audience.vue` + `RaiseQuestionSheet.vue` + `LivePollSlide.vue` + `LiveQuestionSlide.vue` + `LiveRandomAudienceSlide.vue` + `SlideStage.vue` | ✅ M3 live/native interactions + M4 AI interpretation + passed-slide stepper / arrow navigation |
+| `.draft/prototype/src/widgets.jsx` | `apps/web/src/widgets/WidgetFrame.vue` + `bridge.ts` + `components/WidgetCollection.vue` + onboarding widgets in `apps/api/src/slaides/onboarding/widgets/` | ✅ M3 WS broadcast relay + M4 non-audience LLM relay / AI generation / image attachments |
+| `.draft/prototype/src/widget-adjust.jsx` | `apps/web/src/components/WidgetCollection.vue` adjust mode + sidebar Code tab | ✅ Adjust moved out of modal into right sidebar chat; code source is edited inline with explicit Save |
+| `.draft/prototype/src/settings.jsx` | `apps/web/src/components/SettingsDrawer.vue` | ✅ LLM model library + capability routing; Session/Display/Account remain M5 polish |
+| `.draft/prototype/src/app.jsx` | `apps/web/src/router.ts` | ✅ for shipped routes; new routes added as later milestones land |
 
 ## Translation notes (React → Vue 3)
 
@@ -431,11 +431,11 @@ When translating any prototype screen, the Vue version must match on these axes 
 - Browser smoke finding fixed: joining with an invalid `.test` email produced `[object Object]`; [api/client.ts](../apps/web/src/api/client.ts) now formats FastAPI validation arrays into readable messages and [api-client.test.ts](../apps/web/tests/api-client.test.ts) covers it.
 - Browser smoke caveat: local `Field Notes` slide 1 is blank in the current database due a prior autosave, so presenter first opens a blank slide. Slide 2 and onward render/sync correctly; this is local data state, not a renderer failure.
 - Widget height regression caught and fixed: with `html,body{height:100%}` injected, viewport-derived measurements plus a host-side `+2px` buffer made the iframe grow continuously. Fix: ignore resize messages in fill mode; in inline mode, bridge reports body content height only and `WidgetFrame` ignores height noise.
-- LLM provider caveat: real API-key endpoint was tested via `make eval-widgets` (Qwen3.5-397B-A17B on the user's OpenAI-compatible router). The no-key error path was tested in the Settings drawer.
+- LLM provider caveat: real API-key endpoint was previously tested via the archived eval harness under `.draft/tools/eval_widgets.py` (Qwen3.5-397B-A17B on the user's OpenAI-compatible router). The no-key error path was tested in the Settings drawer.
 
 ### Widget generation evaluation (2026-05-20)
 
-A reproducible harness lives at [apps/api/scripts/eval_widgets.py](../apps/api/scripts/eval_widgets.py), wired up as `make eval-widgets [ARGS=...]`. It reads `OPENAI_BASE_URL` / `OPENAI_API_KEY` / `OPENAI_MODEL` from the repo-root `.env` via `python-dotenv`. The legacy Quiet `.swidget` seeds are no longer present; the current harness still runs the synthetic Loud cases added in Widgets v2 Step 4 (`loud-poll` → `tally` aggregator, `loud-wordcloud` → `set_union`). If a future `packages/widget-runtime/seeds` directory is restored, the harness will also score those `.swidget` files. Reports land in `apps/api/scripts/eval_reports/<UTC>.{md,json}`.
+The old eval harness was moved to `.draft/tools/eval_widgets.py` because its legacy Quiet `.swidget` seeds are no longer present. It is useful as historical prompt-evaluation reference, but is no longer part of the active Makefile workflow.
 
 The harness drove three rounds of additive tuning of `WIDGET_THEME_CONTRACT` in [llm/service.py](../apps/api/src/slaides/llm/service.py):
 

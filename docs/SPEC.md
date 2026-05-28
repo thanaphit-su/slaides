@@ -1,6 +1,6 @@
 # SLAIDES — Functional Specification
 
-This document describes the implemented v0.1 product surfaces. The original prototype (`slaides.html`) remains a visual reference, but current behavior lives in `apps/web` and `apps/api`.
+This document describes the implemented v0.1 product surfaces. The archived prototype in `.draft/prototype` remains a visual reference, but current behavior lives in `apps/web` and `apps/api`.
 
 ---
 

@@ -4,7 +4,7 @@
 
 SLAIDES is a web-based platform for **interactive presentations** — slide decks that can host live polls, open questions, AI-generated widgets, and on-the-fly interpretations of selected text. Every audience interaction is logged for later analysis: who participated, what they typed, what terms they asked the LLM to explain.
 
-This repository contains the **SLAIDES v0.1 implementation**, the original hi-fi prototype, and the product/design documentation. The implemented app is a Vue 3 + Vite frontend in `apps/web` backed by a FastAPI service in `apps/api`; the React prototype in `slaides.html` + `src/*.jsx` remains useful as visual reference.
+This repository contains the **SLAIDES v0.1 implementation**, archived draft/reference material, and the product/design documentation. The implemented app is a Vue 3 + Vite frontend in `apps/web` backed by a FastAPI service in `apps/api`; the old React prototype now lives under `.draft/prototype`.
 
 ---
 
@@ -12,19 +12,18 @@ This repository contains the **SLAIDES v0.1 implementation**, the original hi-fi
 
 | File / Folder | What it is |
 |---|---|
-| `slaides.html` | Entry point — open in a browser to launch the interactive prototype |
-| `src/*.jsx` | Prototype source — React+Babel, one file per screen / concern |
-| `src/theme.css` | Design tokens for the "Editorial Press" visual direction |
 | `apps/web` | Implemented Vue 3 + Vite frontend |
 | `apps/api` | Implemented FastAPI backend, Alembic migrations, tests, and seed/eval scripts |
 | `docker-compose.yml`, `docker/supabase/`, `supabase/` | Local Supabase + Redis development services |
-| `visual-directions.html` | The three aesthetic directions explored on day one. Direction **B** was chosen. |
 | `docs/CONCEPT.md` | Product concept, user roles, primary jobs-to-be-done |
 | `docs/SPEC.md` | Functional spec — every screen, every interaction |
 | `docs/REQUIREMENTS.md` | Functional + non-functional requirements with acceptance criteria |
 | `docs/ARCHITECTURE.md` | System architecture, data model, API surface, realtime protocol |
 | `docs/HANDOFF.md` | What the next agent / engineering team needs to implement, in order |
 | `docs/DESIGN.md` | Design tokens (colors, type, spacing, components, motion) |
+| `.draft/prototype` | Archived React+Babel prototype (`slaides.html` + `src/*.jsx`) |
+| `.draft/visual-directions` | Archived early visual-direction board. Direction **B** was chosen. |
+| `.draft/docs` | Superseded plans, snapshots, and documentation-maintenance notes |
 
 ## How to run the implemented app
 
@@ -41,7 +40,7 @@ Useful local URLs:
 
 ## How to read the prototype
 
-1. Open `slaides.html` in a browser.
+1. Open `.draft/prototype/slaides.html` in a browser.
 2. A floating **PROTOTYPE NAV** strip appears at the bottom-left. Use it to jump between the five primary surfaces:
    - **Sign in** — auth + guest-join flow
    - **Library** — instructor's deck collection (home/workspace)
@@ -62,7 +61,7 @@ Useful local URLs:
 | LLM | **OpenAI-compatible only**, configured per workspace (base URL + key + model library/capability routing) |
 | Anonymous storage | Hash(email + per-session salt), retain hash + content |
 
-The prototype is React for the host's preview tooling. The production implementation now lives in Vue 3 under `apps/web`.
+The archived prototype is React for visual reference. The production implementation now lives in Vue 3 under `apps/web`.
 
 ## License & status
 

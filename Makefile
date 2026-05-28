@@ -1,4 +1,4 @@
-.PHONY: up down supabase-up supabase-down supabase-status redis-up migrate seed approve-user delete-user api web test test-api test-web install install-api install-web eval-widgets
+.PHONY: up down supabase-up supabase-down supabase-status redis-up migrate seed approve-user delete-user api web test test-api test-web install install-api install-web
 
 up: supabase-up
 	@echo "Supabase and Redis ready."
@@ -58,6 +58,3 @@ test-web:
 	cd apps/web && npm test
 
 test: test-api test-web
-
-eval-widgets:
-	cd apps/api && uv run python -m scripts.eval_widgets $(ARGS)
