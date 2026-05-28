@@ -119,6 +119,10 @@ interface ResetConfirm {
   pending: boolean;
 }
 const resetConfirm = ref<ResetConfirm | null>(null);
+const isUserNearBottom = ref(true);
+const SCROLL_THRESHOLD_PX = 150;
+let autoScrollRafId: number | null = null;
+let isUnmounted = false;
 
 /** Wraps a PATCH-like operation in the reset-confirm flow. Calls `op` once.
  *  If the server returns 409 `edit_requires_reset`, opens the modal and
@@ -327,6 +331,12 @@ onMounted(() => {
 
 onBeforeUnmount(() => {
   document.removeEventListener("mousedown", onDocumentMouseDown, true);
+  isUnmounted = true;
+  currentAbort.value?.abort();
+  if (autoScrollRafId !== null) {
+    cancelAnimationFrame(autoScrollRafId);
+    autoScrollRafId = null;
+  }
 });
 
 function onDocumentMouseDown(e: MouseEvent) {
@@ -862,7 +872,44 @@ async function persistConversationSnapshot(widget: Widget) {
 
 async function scrollThreadToBottom() {
   await nextTick();
-  if (thread.value) thread.value.scrollTop = thread.value.scrollHeight;
+  if (thread.value) {
+    thread.value.scrollTop = thread.value.scrollHeight;
+    isUserNearBottom.value = true;
+  }
+}
+
+function updateIsUserNearBottom() {
+  const el = thread.value;
+  if (!el) return;
+  const distanceFromBottom = el.scrollHeight - el.scrollTop - el.clientHeight;
+  isUserNearBottom.value = distanceFromBottom <= SCROLL_THRESHOLD_PX;
+}
+
+function onThreadScroll() {
+  updateIsUserNearBottom();
+}
+
+function queueAutoScrollToBottom(opts: { force?: boolean; smooth?: boolean } = {}) {
+  const { force = false, smooth = false } = opts;
+
+  if (!force && !isUserNearBottom.value) return;
+
+  if (autoScrollRafId !== null) cancelAnimationFrame(autoScrollRafId);
+
+  autoScrollRafId = requestAnimationFrame(() => {
+    autoScrollRafId = null;
+    const el = thread.value;
+    if (!el) return;
+    if (!force && !isUserNearBottom.value) return;
+
+    if (smooth) {
+      el.scrollTo({ top: el.scrollHeight, behavior: "smooth" });
+    } else {
+      el.scrollTop = el.scrollHeight;
+    }
+
+    isUserNearBottom.value = true;
+  });
 }
 
 async function scrollToDraftReference(message: ChatMessage) {
@@ -1185,9 +1232,17 @@ async function sendMessage(overrideText?: string) {
                   cancelAnimationFrame(streamingPreviewRafId);
                 }
                 const currentAssistantId = assistantId;
+                // Capture whether we should follow bottom before DOM update
+                const shouldFollow = isUserNearBottom.value;
                 streamingPreviewRafId = requestAnimationFrame(() => {
-                  if (streamingMessageId.value === currentAssistantId) {
+                  if (!isUnmounted && streamingMessageId.value === currentAssistantId) {
                     streamingDraftFields.value = fields;
+                    // Scroll after preview renders, not before
+                    if (shouldFollow) {
+                      void nextTick().then(() => {
+                        queueAutoScrollToBottom({ force: false, smooth: false });
+                      });
+                    }
                   }
                   streamingPreviewRafId = null;
                 });
@@ -1292,7 +1347,11 @@ async function sendMessage(overrideText?: string) {
     streamTail.value = "";
     generating.value = false;
     if (currentAbort.value === controller) currentAbort.value = null;
-    await scrollThreadToBottom();
+    
+    if (!isUnmounted) {
+      await nextTick();
+      queueAutoScrollToBottom({ force: false, smooth: false });
+    }
   }
 }
 
@@ -1467,6 +1526,7 @@ async function persistDraft(insert: boolean, draft: Partial<Widget>, sourceMessa
         appliedFromDraftNumber: sourceDraftNumber,
         appliedFromMessageId: sourceMessageId,
       });
+      await scrollThreadToBottom();
       emit("applied", currentWidget.id);
       return;
     }
@@ -1501,10 +1561,13 @@ async function persistDraft(insert: boolean, draft: Partial<Widget>, sourceMessa
       },
       revision_id: widget.current_revision_id ?? null,
     });
-    if (insert) emit("pick", widget);
-    else {
+    if (insert) {
+      emit("pick", widget);
+    } else {
       const target = messages.value.find((m) => m.id === sourceMessageId);
       if (target) target.applied = true;
+      // Scroll to show the applied confirmation message
+      await scrollThreadToBottom();
     }
   } catch (err) {
     error.value = err instanceof Error ? err.message : "Could not save widget.";
@@ -1585,7 +1648,7 @@ async function doDelete(force: boolean) {
     </div>
 
     <div v-if="tab === 'generate'" class="widget-chat">
-      <div ref="thread" class="widget-chat-thread">
+      <div ref="thread" class="widget-chat-thread" @scroll.passive="onThreadScroll">
         <!-- Empty state — only when no user messages have been sent yet
              in create mode. Adjust mode keeps its single-message welcome. -->
         <div v-if="showEmptyState" class="widget-empty-state">

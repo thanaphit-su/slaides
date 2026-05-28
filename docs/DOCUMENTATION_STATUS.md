@@ -1,6 +1,6 @@
 # SLAIDES Documentation Status
 
-**Updated:** 2026-05-28
+**Updated:** 2026-05-28 (auto-scroll feature)
 
 This file records the documentation state after the 2026-05-28 docs refresh and a code-level audit against `apps/web` and `apps/api`.
 
@@ -25,6 +25,36 @@ This file records the documentation state after the 2026-05-28 docs refresh and 
 - Display preferences are not persisted yet. The settings UI explicitly labels dark mode and editor density persistence as later-release work.
 - The current frontend uses a custom markdown renderer/contenteditable editor, not `remark` or Monaco.
 - The API has no Celery worker dependency today. Background transcript summarisation/export workers are a deployment/future-work concept, not current code.
+
+## Recent Changes (2026-05-28)
+
+### Auto-Scroll for Widget Chat Panel
+
+**Feature:** Smart auto-scrolling during AI widget generation that respects user's reading position.
+
+**Behavior:**
+- Auto-scrolls during streaming only when user is near bottom (150px threshold)
+- User can scroll up to read history without being hijacked
+- Generation completion respects user's scroll position (no forced scroll)
+- Template-based scroll binding ensures listener works correctly with tab switching
+- Unmount guard prevents post-unmount scroll work
+- **Post-render scroll:** Waits for preview card to render before scrolling (avoids scroll-before-content)
+- **Apply confirmation:** Scrolls to show "Applied to the widget" message after user clicks Insert/Apply
+
+**Implementation:**
+- `isUserNearBottom` ref with synchronous scroll tracking
+- `queueAutoScrollToBottom()` helper with rAF coalescing and re-check
+- `@scroll.passive` binding on `.widget-chat-thread` element
+- `isUnmounted` flag guards streaming rAF and finally block
+- Streaming preview captures `shouldFollow` state before DOM update, scrolls after `nextTick()`
+- `persistDraft()` calls `scrollThreadToBottom()` after apply messages
+
+**Files modified:**
+- `apps/web/src/components/WidgetCollection.vue` (~60 lines added/modified)
+
+**Testing:**
+- TypeScript check: passed
+- Frontend tests: 236 passed
 
 ## Verification
 

@@ -164,6 +164,7 @@ A single context menu surfaces on right-click anywhere in the canvas.
   - Animated typing dots + "Waiting for the model to start…"
   - Live character counter (switches to KB past 1KB)
   - Faded mono tail showing last ~280 chars
+  - **Auto-scroll:** Chat panel auto-scrolls during streaming when user is near bottom (~150px threshold). User can scroll up to read history without being hijacked. Generation completion respects user's scroll position.
 - **Preview card on completion:**
   - Compact "DRAFT · KIND" kicker
   - "</> code" link
