@@ -73,11 +73,13 @@ const deleting = ref(false);
 async function deleteTranscript() {
   deleting.value = true;
   try {
-    await analyticsApi.deleteTranscript(sessionId);
-    // Reload transcript to show empty state
+    const result = await analyticsApi.deleteTranscript(sessionId);
+    // Reload transcript to show updated state
     offset.value = 0;
     await fetchTranscript();
     showDeleteConfirm.value = false;
+    // Show confirmation toast
+    alert(`Deleted ${result.deleted_events} slide/LLM events. Poll votes and questions preserved.`);
   } catch (err) {
     error.value = err instanceof Error ? err.message : "Failed to delete transcript";
   } finally {
@@ -114,6 +116,10 @@ const visibleEvents = computed(() => {
   return events.value.filter((e) => activeTypes.value.has(e.event_type));
 });
 
+const deletableEventCount = computed(() => {
+  return events.value.filter((e) => e.source === 'session_event').length;
+});
+
 onMounted(() => {
   fetchTranscript();
 });
@@ -137,9 +143,9 @@ onMounted(() => {
           <Icon name="download" :size="14" />
           JSON
         </button>
-        <button class="btn btn-sm btn-danger" @click="showDeleteConfirm = true" :disabled="events.length === 0">
+        <button class="btn btn-sm btn-danger" @click="showDeleteConfirm = true" :disabled="deletableEventCount === 0">
           <Icon name="delete" :size="14" />
-          Delete History
+          Clear Slide & LLM
         </button>
       </div>
     </header>
@@ -296,20 +302,21 @@ onMounted(() => {
     <!-- Delete Confirm Modal -->
     <div v-if="showDeleteConfirm" class="delete-confirm-modal" @click.self="showDeleteConfirm = false">
       <div class="delete-confirm-content">
-        <h2 class="delete-confirm-title">Delete Session History?</h2>
+        <h2 class="delete-confirm-title">Clear Slide & LLM History?</h2>
         <p class="delete-confirm-message">
-          This will permanently delete all transcript events (slide advances, LLM interpretations) for this session.
-          The session itself will be preserved, but the transcript will be empty.
+          This will permanently delete slide advance events and LLM Interpret calls from the transcript.
           <br><br>
+          <strong>Preserved:</strong> Poll votes, open answers, questions, and audience interactions remain.
+          <br>
           <strong>This action cannot be undone.</strong>
         </p>
         <div class="delete-confirm-actions">
           <button class="btn btn-ghost" @click="showDeleteConfirm = false" :disabled="deleting">
             Cancel
           </button>
-          <button class="btn btn-danger" @click="deleteTranscript" :disabled="deleting">
+          <button class="btn btn-danger" @click="deleteTranscript" :disabled="deleting || deletableEventCount === 0">
             <Icon v-if="deleting" name="loader" :size="14" />
-            {{ deleting ? 'Deleting...' : 'Delete History' }}
+            {{ deleting ? 'Deleting...' : `Delete ${deletableEventCount} Events` }}
           </button>
         </div>
       </div>

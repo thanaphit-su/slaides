@@ -159,24 +159,18 @@ async def delete_session_transcript(
     user = Depends(current_user),
     session = Depends(db_session),
 ) -> dict:
-    """Delete all transcript events for a session (session itself is preserved)."""
+    """Delete slide advance and LLM interpret events from session_event table.
+    
+    Preserves: interaction_log, questions, session_slides, and the session itself.
+    """
     row = await _load_owned_session(session, user, session_id)
     
-    # Delete session_event rows
     deleted = await session.execute(
         sa.delete(SessionEvent).where(SessionEvent.session_id == session_id)
     )
-    deleted_count = deleted.rowcount
-    
-    # Also clear interaction_log rows that have slide_id/session_slide_id for this session
-    # (but keep the interaction_log entries themselves - they're part of the core session data)
-    # Actually, for full history clear, we should delete interaction_log entries too
-    # But that's more invasive. For now, just clear session_event (slide advances + LLM calls)
-    
-    await session.commit()
     
     return {
         "session_id": str(session_id),
-        "deleted_events": deleted_count,
-        "message": f"Deleted {deleted_count} transcript events. Session preserved.",
+        "deleted_events": deleted.rowcount,
+        "message": f"Deleted {deleted.rowcount} slide/LLM events. Session preserved.",
     }
