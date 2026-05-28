@@ -51,8 +51,8 @@ export const analyticsApi = {
   replay: (sessionId: string, limit = 500, offset = 0) =>
     api<ReplayResponse>(`/sessions/${sessionId}/replay?limit=${limit}&offset=${offset}`),
 
-  transcript: (sessionId: string) =>
-    api<TranscriptResponse>(`/sessions/${sessionId}/transcript`),
+  transcript: (sessionId: string, limit = 500, offset = 0) =>
+    api<TranscriptResponse>(`/sessions/${sessionId}/transcript?limit=${limit}&offset=${offset}`),
 
   downloadTranscriptCsv: async (sessionId: string) => {
     const blob = await apiBlob(`/sessions/${sessionId}/transcript.csv`);

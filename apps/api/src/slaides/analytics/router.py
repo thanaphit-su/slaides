@@ -82,7 +82,11 @@ async def get_session_transcript(
     slide_advance_count = has_slide_advances.scalar() or 0
     
     pre_migration_warning = None
-    if slide_advance_count == 0 and row.started_at and row.started_at < SLIDE_TRACKING_ENABLED_AT:
+    started_at = row.started_at
+    # Normalize timezone for SQLite (returns naive datetimes)
+    if started_at and started_at.tzinfo is None:
+        started_at = started_at.replace(tzinfo=timezone.utc)
+    if slide_advance_count == 0 and started_at and started_at < SLIDE_TRACKING_ENABLED_AT:
         pre_migration_warning = "This session ended before slide pacing tracking was enabled. Slide transitions are not available."
     
     return {

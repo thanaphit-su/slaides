@@ -20,26 +20,32 @@ const activeTab = ref<"timeline" | "per-slide" | "per-participant">("timeline");
 const availableTypes = ref<string[]>([]);
 const activeTypes = ref<Set<string>>(new Set());
 
-const limit = 500;
+const PAGE_SIZE = 500;
 const offset = ref(0);
 const hasMore = ref(false);
 
-async function fetchTranscript() {
+async function fetchTranscript(append = false) {
   loading.value = true;
   error.value = null;
   try {
-    const data = await analyticsApi.transcript(sessionId, limit.value, offset.value);
-    events.value = data.events;
-    total.value = data.total;
-    perSlide.value = data.per_slide;
-    perParticipant.value = data.per_participant;
-    preMigrationWarning.value = data.pre_migration_warning || null;
-    hasMore.value = data.has_more;
+    const data = await analyticsApi.transcript(sessionId, PAGE_SIZE, offset.value);
     
-    // Extract unique event types for filter (from all events, not just page)
-    const types = Array.from(new Set(events.value.map((e) => e.event_type))).sort();
-    availableTypes.value = types;
-    activeTypes.value = new Set(types);
+    if (append) {
+      events.value = [...events.value, ...data.events];
+    } else {
+      events.value = data.events;
+      total.value = data.total;
+      perSlide.value = data.per_slide;
+      perParticipant.value = data.per_participant;
+      preMigrationWarning.value = data.pre_migration_warning || null;
+      
+      // Extract unique event types for filter (from all events)
+      const types = Array.from(new Set(data.events.map((e) => e.event_type))).sort();
+      availableTypes.value = types;
+      activeTypes.value = new Set(types);
+    }
+    
+    hasMore.value = data.has_more;
   } catch (err) {
     error.value = err instanceof Error ? err.message : "Failed to load transcript";
   } finally {
@@ -49,8 +55,8 @@ async function fetchTranscript() {
 
 function loadMore() {
   if (!hasMore.value) return;
-  offset.value += limit.value;
-  fetchTranscript();
+  offset.value += PAGE_SIZE;
+  fetchTranscript(true);
 }
 
 function downloadCsv() {
