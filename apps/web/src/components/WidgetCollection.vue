@@ -8,9 +8,11 @@ import { useWidgetsStore } from "@/stores/widgets";
 import Icon from "@/components/Icon.vue";
 import PropsForm from "@/components/PropsForm.vue";
 import WidgetFrame from "@/widgets/WidgetFrame.vue";
+
 import { loadRecentPrompts, pushRecentPrompt } from "@/widgets/recent-prompts";
 import { sanitiseBehavior } from "@/widgets/behavior";
 import { validateDraftJs } from "@/widgets/draft-js";
+import { extractPreviewFields, sanitizeStreamingHtml, type StreamingPreviewFields } from "@/widgets/streaming-parser";
 import type { SlideWidgetEmbed, Widget, WidgetAiMessage, WidgetAiThread, WidgetSummary, Workspace } from "@/api/types";
 
 const props = defineProps<{
@@ -59,6 +61,7 @@ const generating = ref(false);
 const streamingMessageId = ref<string | null>(null);
 const streamedChars = ref(0);
 const streamTail = ref("");
+const streamingDraftFields = ref<{ html: string | null; css: string | null; name: string | null; kind: string | null } | null>(null);
 const currentAbort = ref<AbortController | null>(null);
 const error = ref<string | null>(null);
 const savingMessageId = ref<string | null>(null);
@@ -972,6 +975,32 @@ function draftPreviewProps(draft: Partial<Widget>): Record<string, unknown> {
   return draft.example_props && typeof draft.example_props === "object" ? draft.example_props : {};
 }
 
+const streamingPreviewDraft = computed<Partial<Widget> | null>(() => {
+  const fields = streamingDraftFields.value;
+  if (!fields?.html) return null;
+  
+  const draft: Partial<Widget> = {
+    name: fields.name || undefined,
+    kind: fields.kind || undefined,
+    html: sanitizeStreamingHtml(fields.html),
+    css: null,  // NO CSS during streaming - prevents @import/url() bypasses
+    js: null,
+    behavior: { kind: "quiet" },
+  };
+  
+  if (adjusting.value && targetWidget.value) {
+    return { ...targetWidget.value, ...draft };
+  }
+  
+  return draft;
+});
+
+const streamingPreviewWidget = computed<Widget | null>(() => {
+  const draft = streamingPreviewDraft.value;
+  if (!draft) return null;
+  return draftPreviewWidget(draft, "streaming-preview");
+});
+
 function validateDraftHtml(html: string): string | null {
   const trimmed = html.trim();
   if (!trimmed) return "AI returned empty HTML.";
@@ -1072,6 +1101,8 @@ async function sendMessage(overrideText?: string) {
   streamTail.value = "";
   await scrollThreadToBottom();
   let raw = "";
+  let lastExtractedFields: StreamingPreviewFields | null = null;
+  let streamingPreviewRafId: number | null = null;
   try {
     const baseContext: Record<string, unknown> = {
       contract: widgetWorkflowContract(),
@@ -1141,15 +1172,32 @@ async function sendMessage(overrideText?: string) {
                 return;
               }
               streamedChars.value = raw.length;
-              // Keep only the trailing bytes so the DOM doesn't grow unboundedly
-              // for long widgets. Showing the tail (vs head) lets the user see
-              // forward progress at a glance.
-              streamTail.value = clarifyFirst ? "" : raw.length > 280 ? raw.slice(-280) : raw;
+              
+              const fields = extractPreviewFields(raw);
+              const hasChanged = !lastExtractedFields ||
+                fields.html !== lastExtractedFields.html ||
+                fields.css !== lastExtractedFields.css ||
+                fields.name !== lastExtractedFields.name ||
+                fields.kind !== lastExtractedFields.kind;
+              
+              if (hasChanged && fields.html) {
+                if (streamingPreviewRafId !== null) {
+                  cancelAnimationFrame(streamingPreviewRafId);
+                }
+                const currentAssistantId = assistantId;
+                streamingPreviewRafId = requestAnimationFrame(() => {
+                  if (streamingMessageId.value === currentAssistantId) {
+                    streamingDraftFields.value = fields;
+                  }
+                  streamingPreviewRafId = null;
+                });
+                lastExtractedFields = fields;
+              }
+              
+              // Keep tail populated for compact display under preview
+              streamTail.value = clarifyFirst ? "" : (raw.length > 280 ? raw.slice(-280) : raw);
             },
             onWarnings: (warnings) => {
-              // Post-stream validator warnings (theme/layout/props/behavior).
-              // Surface inline in the chat so the user notices the broken-Loud,
-              // hardcoded-content, hex-color etc. cases the backend caught.
               assistantMessage.warnings = warnings;
             },
           },
@@ -1234,7 +1282,12 @@ async function sendMessage(overrideText?: string) {
       }
     }
   } finally {
+    if (streamingPreviewRafId !== null) {
+      cancelAnimationFrame(streamingPreviewRafId);
+      streamingPreviewRafId = null;
+    }
     streamingMessageId.value = null;
+    streamingDraftFields.value = null;
     streamedChars.value = 0;
     streamTail.value = "";
     generating.value = false;
@@ -1618,7 +1671,7 @@ async function doDelete(force: boolean) {
             </template>
           </div>
           <div
-            v-if="streamingMessageId === message.id && streamTail"
+            v-if="streamingMessageId === message.id && streamTail && !streamingPreviewWidget"
             class="chat-stream-tail t-mono"
             aria-label="Streaming widget source"
           >
@@ -1634,6 +1687,34 @@ async function doDelete(force: boolean) {
               <li v-for="(step, idx) in message.plan" :key="idx">{{ step }}</li>
             </ol>
             <p v-if="message.reflection" class="widget-workflow-reflection">{{ message.reflection }}</p>
+          </div>
+
+          <div v-if="streamingMessageId === message.id && streamingPreviewWidget && !message.draft" class="widget-preview-card is-streaming">
+            <div class="widget-preview-head">
+              <span class="widget-preview-kicker">
+                <span v-if="streamingPreviewWidget.name !== 'Generated widget'">
+                  GENERATING · {{ streamingPreviewWidget.name }}
+                </span>
+                <span v-else>GENERATING...</span>
+                <span class="streaming-char-count">{{ streamedChars }} chars</span>
+              </span>
+            </div>
+            
+            <div class="widget-preview-frame-wrap">
+              <WidgetFrame
+                class="widget-preview-frame"
+                :widget="streamingPreviewWidget"
+                :placement-id="`streaming-preview-${message.id}`"
+                :boot-props="draftPreviewProps(streamingPreviewWidget)"
+                role="preview"
+                :fill="true"
+                :min-height="200"
+              />
+            </div>
+            
+            <div v-if="streamTail" class="streaming-tail-compact">
+              <code>{{ streamTail }}</code>
+            </div>
           </div>
 
           <div v-if="message.draft" class="widget-preview-card scale-in">
@@ -2588,6 +2669,33 @@ async function doDelete(force: boolean) {
 .widget-preview-frame-wrap {
   height: 200px;
   background: var(--paper);
+}
+
+.streaming-char-count {
+  margin-left: 12px;
+  font-size: 11px;
+  color: var(--muted);
+}
+
+.streaming-tail-compact {
+  margin-top: 8px;
+  padding: 8px;
+  background: var(--paper-2);
+  border-radius: 4px;
+  font-size: 11px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  border: 1px solid var(--rule-soft);
+}
+
+.streaming-tail-compact code {
+  font-family: monospace;
+  color: var(--foreground);
+}
+
+.widget-preview-card.is-streaming {
+  opacity: 0.9;
 }
 
 .widget-preview-frame {
