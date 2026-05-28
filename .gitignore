@@ -69,6 +69,9 @@ docker/supabase/volumes/
 docker/supabase/test.http
 docker/supabase/docker-compose.override.yml
 
+# Understand Anything assets
+.understand-anything/
+
 # Runtime/generated local assets
 uploads/
 scraps/
