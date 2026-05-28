@@ -375,8 +375,20 @@ async def widget_from_interaction(
     w = Widget(deck_id=sess_row.deck_id, behavior={"kind": "quiet"}, **widget_payload)
     session.add(w)
     await session.flush()
+    await _create_revision(
+        session,
+        w,
+        html=w.html or "",
+        js=w.js,
+        css=w.css,
+        props_schema=w.props_schema or {},
+        example_props={},
+        behavior=w.behavior,
+        ai_spec={},
+        created_reason="migration_backfill",
+    )
     await session.refresh(w)
-    return _full(w)
+    return await _full_with_revision(session, w)
 
 
 async def _guest_can_read_widget(

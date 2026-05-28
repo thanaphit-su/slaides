@@ -82,7 +82,7 @@ const Rendered = defineComponent({
       return renderMarkdown(props.slide.markdown, {
         slim: props.slim,
         widgets: props.slide.widgets,
-        usePlacementRevision: false,
+        usePlacementRevision: true,
         getWidget,
         WidgetFrameComp: WidgetFrame as unknown as never,
         widgetRole: props.role,
