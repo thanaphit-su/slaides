@@ -72,7 +72,7 @@ async def get_session_transcript(
     per_slide = await service.get_per_slide_summary(session, session_id)
     per_participant = await service.get_all_participant_summaries(session, session_id)
     
-    # Check if pre-migration session
+    # Check if pre-migration session: zero slide.advance events AND started before tracking date
     has_slide_advances = await session.execute(
         select(func.count()).select_from(SessionEvent).where(
             SessionEvent.session_id == session_id,
@@ -82,8 +82,7 @@ async def get_session_transcript(
     slide_advance_count = has_slide_advances.scalar() or 0
     
     pre_migration_warning = None
-    tracking_enabled_at = await service.get_slide_tracking_enabled_at(session)
-    if slide_advance_count == 0 and row.started_at and tracking_enabled_at and row.started_at < tracking_enabled_at:
+    if slide_advance_count == 0 and row.started_at and row.started_at < SLIDE_TRACKING_ENABLED_AT:
         pre_migration_warning = "This session ended before slide pacing tracking was enabled. Slide transitions are not available."
     
     return {

@@ -78,7 +78,7 @@ async def create_session(
     # Log initial slide display
     if first_slide:
         from ..analytics.events import log_slide_advance
-        await log_slide_advance(session, row.id, None, first_slide.id, to_kind="deck")
+        await log_slide_advance(session, row.id, None, first_slide.id)
     
     return row
 
@@ -104,9 +104,9 @@ async def advance_slide(
     
     row.current_slide_id = slide_id
     
-    # Log the transition event (both are deck slides)
+    # Log the transition event - let _get_slide_kind determine the kind
     from ..analytics.events import log_slide_advance
-    await log_slide_advance(session, row.id, from_id, slide_id, from_kind="deck", to_kind="deck")
+    await log_slide_advance(session, row.id, from_id, slide_id)
     
     await session.flush()
     await session.refresh(row)
