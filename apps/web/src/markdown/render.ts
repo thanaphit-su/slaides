@@ -30,7 +30,7 @@ export interface RenderOptions {
   widgetParticipant?: { display_name?: string | null; anon?: boolean };
 }
 
-interface Block {
+export interface Block {
   type: "h1" | "h2" | "h3" | "p" | "quote" | "rule" | "widget" | "list" | "table";
   text?: string;
   id?: string;
@@ -40,7 +40,7 @@ interface Block {
   rows?: string[][];
 }
 
-const INLINE_RE = /(\*\*[^*]+\*\*|\*[^*]+\*|`[^`]+`|\[[^\]]+\]\([^)]+\))/;
+export const INLINE_RE = /(\*\*[^*]+\*\*|\*[^*]+\*|`[^`]+`|\[[^\]]+\]\([^)]+\))/;
 
 const ALLOWED_LINK_SCHEMES = new Set(["http", "https", "mailto"]);
 
@@ -640,24 +640,59 @@ function renderWidgetBlock(b: Block, key: number, opts: RenderOptions, fill = fa
 }
 
 /* ===================== Serialise back to markdown =====================
-   The contentEditable mirror tags every block with `data-block`. Walk the
-   first level children in DOM order; map each block back to markdown.
+   The block model (`Block[]`, parsed by `parseBlocks`) is the source of truth
+   for the editor. `blocksToMarkdown` maps it back to markdown deterministically
+   — block *structure* comes from the model, never from reading the DOM. Only
+   inline content round-trips through the DOM, via `serialiseInline` below
+   (bounded: strong/em/code/a/br), so an editing surface can read a single
+   focused block's marks back without ever serialising whole-document structure.
 */
 
-export function serialiseContentEditable(el: HTMLElement): string {
-  const parts: string[] = [];
-  for (const node of Array.from(el.childNodes)) {
-    if (node instanceof HTMLElement) {
-      parts.push(serialiseNode(node));
-    } else if (node.nodeType === Node.TEXT_NODE) {
-      const text = (node.textContent || "").trim();
-      if (text) parts.push(text);
+/** Map a single block of the parsed model back to its markdown source. */
+export function blockToMarkdown(b: Block): string {
+  switch (b.type) {
+    case "h1":
+      return `# ${b.text || ""}`;
+    case "h2":
+      return `## ${b.text || ""}`;
+    case "h3":
+      return `### ${b.text || ""}`;
+    case "quote":
+      return `> ${b.text || ""}`;
+    case "rule":
+      return "---";
+    case "widget":
+      return `{{widget:${b.id || ""}}}`;
+    case "list": {
+      const ordered = !!b.ordered;
+      return (b.items || [])
+        .map((item, i) => `${ordered ? `${i + 1}.` : "-"} ${item}`)
+        .join("\n");
     }
+    case "table": {
+      const headers = b.headers || [];
+      const rows = b.rows || [];
+      const header = `| ${headers.join(" | ")} |`;
+      const separator = `| ${headers.map(() => "---").join(" | ")} |`;
+      const body = rows.map((row) => `| ${row.join(" | ")} |`);
+      return [header, separator, ...body].join("\n");
+    }
+    case "p":
+    default:
+      return b.text || "";
   }
-  return parts.join("\n\n").replace(/\n{3,}/g, "\n\n").trim();
 }
 
-function serialiseInline(node: Node): string {
+/** Serialise the whole block model back to a markdown document. */
+export function blocksToMarkdown(blocks: Block[]): string {
+  return blocks
+    .map(blockToMarkdown)
+    .join("\n\n")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
+}
+
+export function serialiseInline(node: Node): string {
   if (node.nodeType === Node.TEXT_NODE) return node.textContent || "";
   if (!(node instanceof HTMLElement)) return "";
   const tag = node.tagName.toLowerCase();
@@ -678,54 +713,6 @@ function serialiseInline(node: Node): string {
     }
     case "br":
       return "\n";
-    default:
-      return inner;
-  }
-}
-
-function serialiseNode(el: HTMLElement): string {
-  const kind = el.getAttribute("data-block");
-  if (kind === "widget") {
-    const id = el.getAttribute("data-widget-id") || "";
-    return `{{widget:${id}}}`;
-  }
-  if (kind === "list") {
-    const ordered = el.tagName.toLowerCase() === "ol" || el.getAttribute("data-ordered") === "true";
-    return Array.from(el.children)
-      .filter((child): child is HTMLElement => child instanceof HTMLElement && child.tagName.toLowerCase() === "li")
-      .map((li, i) => {
-        const inner = Array.from(li.childNodes).map(serialiseInline).join("").trim();
-        return `${ordered ? `${i + 1}.` : "-"} ${inner}`;
-      })
-      .join("\n");
-  }
-  if (kind === "table") {
-    const headerCells = Array.from(el.querySelectorAll("thead th")).map((cell) =>
-      Array.from(cell.childNodes).map(serialiseInline).join("").trim(),
-    );
-    const rows = Array.from(el.querySelectorAll("tbody tr")).map((row) =>
-      Array.from(row.children)
-        .filter((cell): cell is HTMLElement => cell instanceof HTMLElement)
-        .map((cell) => Array.from(cell.childNodes).map(serialiseInline).join("").trim()),
-    );
-    const header = `| ${headerCells.join(" | ")} |`;
-    const separator = `| ${headerCells.map(() => "---").join(" | ")} |`;
-    const body = rows.map((row) => `| ${row.join(" | ")} |`);
-    return [header, separator, ...body].join("\n");
-  }
-  const inner = Array.from(el.childNodes).map(serialiseInline).join("").trim();
-  switch (kind) {
-    case "h1":
-      return `# ${inner}`;
-    case "h2":
-      return `## ${inner}`;
-    case "h3":
-      return `### ${inner}`;
-    case "quote":
-      return `> ${inner}`;
-    case "rule":
-      return `---`;
-    case "p":
     default:
       return inner;
   }

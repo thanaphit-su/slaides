@@ -14,7 +14,6 @@ import SidebarCollapsed from "@/components/SidebarCollapsed.vue";
 import SlideCanvas from "@/components/SlideCanvas.vue";
 import SlideStepper from "@/components/SlideStepper.vue";
 import AddSlideRibbon from "@/components/AddSlideRibbon.vue";
-import AddWidgetRibbon from "@/components/AddWidgetRibbon.vue";
 import WidgetCollection from "@/components/WidgetCollection.vue";
 import SettingsDrawer from "@/components/SettingsDrawer.vue";
 import InterpretPopover from "@/components/InterpretPopover.vue";
@@ -189,13 +188,6 @@ const activeSlideIndex = computed(() => {
 });
 
 const activePlacement = computed(() => activeSlide.value?.widgets[0] ?? null);
-const slideIsLight = computed(() => {
-  const md = (activeSlide.value?.markdown || "").trim();
-  if (!md) return true;
-  // Empty-ish slides: only a single H1 line. Once body content exists, hide.
-  const lines = md.split(/\r?\n/).filter((l) => l.trim().length > 0);
-  return lines.length <= 1 && lines.every((l) => l.startsWith("# "));
-});
 
 function onCanvasFocusChange(focused: boolean) {
   canvasFocused.value = focused;
@@ -270,7 +262,12 @@ function onRemoveWidgetFromChrome(placement: SlideWidgetEmbed) {
 }
 
 watch(activePlacement, async (p) => {
-  if (p) await widgetsStore.fetchOne(p.widget_id);
+  if (!p) return;
+  await widgetsStore.fetchOne(p.widget_id);
+  // The widget body just landed in the store cache. Bump widgetRev so the
+  // canvas's widget node re-reads the resolver and swaps its loading stub for
+  // the live iframe (the resolver is an opaque call, not a tracked dep).
+  widgetRev.value++;
 });
 
 async function preloadCurrentWidgets() {
@@ -595,6 +592,18 @@ function openWidgetGenerator() {
   drawerOpen.value = true;
 }
 
+// "Insert from collection" opens the LEFT sidebar's widgets tab (the browsable
+// collection), not the right-hand generate/adjust drawer.
+function openWidgetCollection() {
+  if (activePlacement.value) {
+    // Slide already has a widget — there's nothing to insert; land on adjust.
+    openWidgetAdjust();
+    return;
+  }
+  sidebarTab.value = "widgets";
+  sidebarOpen.value = true;
+}
+
 function openWidgetAdjust() {
   drawerTab.value = "generate";
   widgetSidebarMode.value = "adjust";
@@ -897,24 +906,15 @@ function onDeleteSlideById(id: string) {
                   <div class="t-kicker">
                     {{ derivedKicker }}
                   </div>
-                  <div class="editor-mode-toggle" aria-label="Slide editor mode">
-                    <button
-                      type="button"
-                      :aria-pressed="editorMode === 'rendered'"
-                      :class="{ active: editorMode === 'rendered' }"
-                      @click="setEditorMode('rendered')"
-                    >
-                      <Icon name="eye" :size="14" /> Rendered
-                    </button>
-                    <button
-                      type="button"
-                      :aria-pressed="editorMode === 'markdown'"
-                      :class="{ active: editorMode === 'markdown' }"
-                      @click="setEditorMode('markdown')"
-                    >
-                      <Icon name="md" :size="14" /> Markdown
-                    </button>
-                  </div>
+                  <button
+                    type="button"
+                    class="editor-mode-switch"
+                    :aria-label="editorMode === 'rendered' ? 'Switch to Markdown' : 'Switch to Rendered'"
+                    :title="editorMode === 'rendered' ? 'Edit as Markdown' : 'Back to rendered view'"
+                    @click="setEditorMode(editorMode === 'rendered' ? 'markdown' : 'rendered')"
+                  >
+                    <Icon :name="editorMode === 'rendered' ? 'md' : 'eye'" :size="16" />
+                  </button>
                 </div>
                 <SlideCanvas
                   v-if="editorMode === 'rendered'"
@@ -939,16 +939,6 @@ function onDeleteSlideById(id: string) {
                   @focus="canvasFocused = true"
                   @blur="onMarkdownBlur"
                 />
-                <!-- Add widget CTA only appears when the slide has no widget yet.
-                     When one exists, the live iframe is mounted inline at the
-                     placeholder position inside the SlideCanvas above. -->
-                <AddWidgetRibbon
-                  v-if="editorMode === 'rendered' && !activePlacement && !canvasFocused && slideIsLight"
-                  :visible="true"
-                  @pick-library="openWidgetLibrary"
-                  @generate="openWidgetGenerator"
-                />
-
                 <div
                   :style="{
                     marginTop: '48px',
@@ -1109,7 +1099,7 @@ function onDeleteSlideById(id: string) {
       </template>
       <template v-else>
         <button class="context-item" @click="contextMenu = null; openWidgetGenerator()">Generate widget...</button>
-        <button class="context-item" @click="contextMenu = null; openWidgetLibrary()">Insert from collection...</button>
+        <button class="context-item" @click="contextMenu = null; openWidgetCollection()">Insert from collection...</button>
       </template>
       <div class="context-divider" />
       <button
@@ -1330,41 +1320,29 @@ function onDeleteSlideById(id: string) {
   margin-bottom: 18px;
 }
 
-.editor-mode-toggle {
+.editor-mode-switch {
   display: inline-flex;
   align-items: center;
-  gap: 2px;
-  padding: 3px;
-  border: 1px solid var(--rule);
-  border-radius: var(--r-md);
-  background: var(--paper-2);
-  flex-shrink: 0;
-}
-
-.editor-mode-toggle button {
+  justify-content: center;
+  width: 34px;
+  height: 34px;
+  padding: 0;
   border: 0;
-  border-radius: var(--r-sm);
+  border-radius: var(--r-md);
   background: transparent;
   color: var(--ink-soft);
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  padding: 6px 10px;
-  font-family: var(--sans);
-  font-size: 12px;
-  font-weight: 600;
   cursor: pointer;
+  flex-shrink: 0;
+  transition: color 0.12s ease;
 }
 
-.editor-mode-toggle button:hover {
-  color: var(--ink);
-}
-
-.editor-mode-toggle button.active {
-  background: var(--paper);
+.editor-mode-switch:hover {
   color: var(--accent);
-  border: 1px solid var(--rule);
-  box-shadow: var(--shadow-1);
+}
+
+.editor-mode-switch:focus-visible {
+  outline: none;
+  color: var(--accent);
 }
 
 .editor-slide-scroll {

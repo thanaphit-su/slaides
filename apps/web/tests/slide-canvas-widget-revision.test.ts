@@ -1,7 +1,16 @@
 import { mount } from "@vue/test-utils";
 import { describe, expect, it } from "vitest";
+import { nextTick } from "vue";
 import SlideCanvas from "../src/components/SlideCanvas.vue";
 import type { SlideWidgetEmbed, Widget } from "../src/api/types";
+
+// TipTap mounts its node views (and our WidgetFrame iframe inside them) across
+// a couple of microtasks after the editor is created in onMounted.
+async function settle() {
+  await nextTick();
+  await nextTick();
+  await nextTick();
+}
 
 describe("SlideCanvas widget revision rendering", () => {
   it("renders the current widget body after AI Adjust instead of the attached revision", async () => {
@@ -53,10 +62,13 @@ describe("SlideCanvas widget revision rendering", () => {
         widgetRev: 1,
         getWidget: () => current,
       },
+      attachTo: document.body,
     });
+    await settle();
 
     const srcdoc = wrapper.find("iframe").attributes("srcdoc") || "";
     expect(srcdoc).toContain("<p>current revision</p>");
     expect(srcdoc).not.toContain("<p>old revision</p>");
+    wrapper.unmount();
   });
 });

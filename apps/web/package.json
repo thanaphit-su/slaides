@@ -12,6 +12,13 @@
   },
   "dependencies": {
     "@lucide/vue": "^1.16.0",
+    "@tiptap/extension-table": "^3.23.6",
+    "@tiptap/extension-table-cell": "^3.23.6",
+    "@tiptap/extension-table-header": "^3.23.6",
+    "@tiptap/extension-table-row": "^3.23.6",
+    "@tiptap/pm": "^3.23.6",
+    "@tiptap/starter-kit": "^3.23.6",
+    "@tiptap/vue-3": "^3.23.6",
     "jszip": "^3.10.1",
     "pinia": "^2.2.4",
     "vue": "^3.5.13",
