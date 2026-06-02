@@ -11,7 +11,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from ..auth.deps import GuestPrincipal, current_guest, current_user
 from ..auth.service import issue_guest
 from ..db.deps import db_session
-from ..db.models import AppUser, Deck, InteractionLog, LlmCall, Participant, Slide, Workspace
+from ..db.models import AppUser, Deck, InteractionLog, LlmCall, LlmInterpretCache, Participant, Slide, Workspace
 from ..db.models import Session as SessionRow
 from ..decks import service as deck_service
 from ..decks.schemas import SectionOut, SlideOut, SlideWidgetEmbed
@@ -279,6 +279,7 @@ async def end_session_endpoint(
 ) -> SessionSnapshot:
     row = await _load_owned(session, user, session_id)
     await service.end_session(session, row)
+    await session.execute(delete(LlmInterpretCache).where(LlmInterpretCache.session_id == session_id))
     snapshot = await _snapshot(session, row)
     from .ws import broadcast_session_ended
 

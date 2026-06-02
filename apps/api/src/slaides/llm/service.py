@@ -11,9 +11,11 @@ from collections.abc import AsyncIterator
 import httpx
 from fastapi import HTTPException, status
 from redis import asyncio as aioredis
+from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from ..db.models import AppUser, LlmCall, Workspace
+from ..db.models import AppUser, LlmCall, LlmInterpretCache, Workspace
 from ..settings import get_settings
 from .crypto import decrypt_workspace_secret
 from .schemas import LlmCompleteRequest
@@ -1038,6 +1040,76 @@ def _messages(body: LlmCompleteRequest) -> list[dict]:
     ]
 
 
+def _hash_text(value: str) -> str:
+    return hashlib.sha256(value.encode("utf-8")).hexdigest()
+
+
+def _hash_json(value: object) -> str:
+    canonical = json.dumps(value, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
+    return _hash_text(canonical)
+
+
+def _context_uuid(context: dict, key: str) -> uuid.UUID | None:
+    raw = context.get(key)
+    if not raw:
+        return None
+    try:
+        return uuid.UUID(str(raw))
+    except ValueError:
+        return None
+
+
+async def _store_interpret_cache(
+    session: AsyncSession,
+    cache: LlmInterpretCache,
+) -> None:
+    """Persist a cache row without poisoning the outer request transaction.
+
+    Two identical interpretation requests can both miss the initial lookup and
+    then race to insert the same cache key. The loser should still complete and
+    write its LlmCall / transcript event, so the cache insert lives in a
+    savepoint and duplicate-key failures are ignored.
+    """
+
+    try:
+        async with session.begin_nested():
+            session.add(cache)
+            await session.flush()
+    except IntegrityError:
+        logger.debug(
+            "interpret cache insert skipped after duplicate key session=%s slide=%s model=%s",
+            cache.session_id,
+            cache.slide_id,
+            cache.model,
+        )
+
+
+async def _lookup_interpret_cache(
+    session: AsyncSession,
+    *,
+    session_id: uuid.UUID,
+    workspace_id: uuid.UUID,
+    slide_id: uuid.UUID | None,
+    selection_hash: str,
+    prompt_hash: str,
+    model: str,
+    model_parameters_hash: str,
+) -> LlmInterpretCache | None:
+    return (
+        await session.execute(
+            select(LlmInterpretCache).where(
+                LlmInterpretCache.session_id == session_id,
+                LlmInterpretCache.workspace_id == workspace_id,
+                LlmInterpretCache.slide_id == slide_id,
+                LlmInterpretCache.selection_hash == selection_hash,
+                LlmInterpretCache.prompt_hash == prompt_hash,
+                LlmInterpretCache.model == model,
+                LlmInterpretCache.model_parameters_hash == model_parameters_hash,
+            )
+        )
+    ).scalar_one_or_none()
+
+
 async def _stream_openai_chunks(
     *,
     base_url: str,
@@ -1107,20 +1179,43 @@ async def stream_completion(
         yield _sse("error", {"detail": model_error or "LLM model is not configured"})
         return
 
-    try:
-        await enforce_rate_limit(workspace.id, body.purpose, user.id if user else None)
-    except HTTPException as exc:
-        yield _sse("error", {"detail": exc.detail})
-        return
     started = time.perf_counter()
     model = str(model_config.get("id") or workspace.llm_model or "gpt-4.1-mini")
     parameters = _model_parameters(model_config)
     prompt_hash = hashlib.sha256(body.prompt.encode("utf-8")).hexdigest()
+    context = body.context or {}
+    selection = str(context.get("selection", ""))
+    slide_id = _context_uuid(context, "slide_id")
+    model_parameters_hash = _hash_json(parameters)
+    cache_hit = False
     output: list[str] = []
     tokens_in = None
     tokens_out = None
 
     try:
+        cache_row: LlmInterpretCache | None = None
+        if body.purpose == "interpret" and session_id:
+            cache_row = await _lookup_interpret_cache(
+                session,
+                session_id=session_id,
+                workspace_id=workspace.id,
+                slide_id=slide_id,
+                selection_hash=_hash_text(selection),
+                prompt_hash=prompt_hash,
+                model=model,
+                model_parameters_hash=model_parameters_hash,
+            )
+        if cache_row is not None:
+            cache_hit = True
+            yield _sse("done", {"text": cache_row.response_text})
+            return
+
+        try:
+            await enforce_rate_limit(workspace.id, body.purpose, user.id if user else None)
+        except HTTPException as exc:
+            yield _sse("error", {"detail": exc.detail})
+            return
+
         async for delta, usage in _stream_openai_chunks(
             base_url=workspace.llm_base_url,
             api_key=api_key,
@@ -1149,6 +1244,22 @@ async def stream_completion(
             )
             if warnings:
                 done_payload["warnings"] = warnings
+        if body.purpose == "interpret" and session_id:
+            await _store_interpret_cache(
+                session,
+                LlmInterpretCache(
+                    session_id=session_id,
+                    workspace_id=workspace.id,
+                    slide_id=slide_id,
+                    selection_hash=_hash_text(selection),
+                    prompt_hash=prompt_hash,
+                    model_parameters_hash=model_parameters_hash,
+                    model=model,
+                    response_text=final_text,
+                    tokens_in=tokens_in,
+                    tokens_out=tokens_out,
+                )
+            )
         yield _sse("done", done_payload)
     except HTTPException as exc:
         yield _sse("error", {"detail": exc.detail})
@@ -1172,6 +1283,7 @@ async def stream_completion(
                 model=model,
                 prompt_hash=prompt_hash,
                 prompt_text=None,
+                cache_hit=cache_hit,
                 latency_ms=elapsed_ms,
                 tokens_in=tokens_in,
                 tokens_out=tokens_out,
@@ -1182,15 +1294,6 @@ async def stream_completion(
         if body.purpose == "interpret" and session_id:
             from ..analytics.events import log_llm_interpret
             
-            # Normalize slide_id from context
-            slide_id = None
-            if body.context.get("slide_id"):
-                try:
-                    slide_id = uuid.UUID(body.context["slide_id"])
-                except ValueError:
-                    pass  # Invalid UUID, leave as None
-            
-            selection = body.context.get("selection", "")
             await log_llm_interpret(
                 session,
                 session_id,
@@ -1199,6 +1302,7 @@ async def stream_completion(
                 prompt=body.prompt,
                 slide_id=slide_id,
                 log_prompts=workspace.log_llm_prompts_for_transcript,
+                cache_hit=cache_hit,
             )
         
         await session.flush()

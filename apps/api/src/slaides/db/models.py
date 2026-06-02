@@ -392,9 +392,43 @@ class LlmCall(Base):
     model: Mapped[str | None] = mapped_column(String(200), nullable=True)
     prompt_hash: Mapped[str | None] = mapped_column(String(64), nullable=True)
     prompt_text: Mapped[str | None] = mapped_column(Text, nullable=True)
+    cache_hit: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     latency_ms: Mapped[int | None] = mapped_column(Integer, nullable=True)
     tokens_in: Mapped[int | None] = mapped_column(Integer, nullable=True)
     tokens_out: Mapped[int | None] = mapped_column(Integer, nullable=True)
     occurred_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
     __table_args__ = (Index("ix_llm_call_workspace", "workspace_id", "occurred_at"),)
+
+
+class LlmInterpretCache(Base):
+    __tablename__ = "llm_interpret_cache"
+
+    id: Mapped[int] = mapped_column(BigInteger().with_variant(Integer(), "sqlite"), primary_key=True, autoincrement=True)
+    session_id: Mapped[uuid.UUID] = mapped_column(GUID(), ForeignKey("session.id", ondelete="CASCADE"), nullable=False)
+    workspace_id: Mapped[uuid.UUID] = mapped_column(GUID(), ForeignKey("workspace.id"), nullable=False)
+    slide_id: Mapped[uuid.UUID | None] = mapped_column(GUID(), nullable=True)
+    selection_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    prompt_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    model_parameters_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    model: Mapped[str] = mapped_column(String(200), nullable=False)
+    response_text: Mapped[str] = mapped_column(Text, nullable=False)
+    tokens_in: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    tokens_out: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False
+    )
+
+    __table_args__ = (
+        UniqueConstraint(
+            "session_id",
+            "slide_id",
+            "selection_hash",
+            "prompt_hash",
+            "model",
+            "model_parameters_hash",
+            name="uq_llm_interpret_cache_key",
+        ),
+        Index("ix_llm_interpret_cache_session", "session_id"),
+    )

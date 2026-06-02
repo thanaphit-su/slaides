@@ -67,6 +67,7 @@ async def log_llm_interpret(
     prompt: str,
     slide_id: uuid.UUID | None,
     log_prompts: bool,
+    cache_hit: bool = False,
 ) -> None:
     """Log LLM interpret call metadata for transcript."""
     selection_hash = hash_for_transcript(selection)
@@ -76,6 +77,7 @@ async def log_llm_interpret(
         "selection_hash": selection_hash,
         "prompt_hash": prompt_hash,
         "slide_id": str(slide_id) if slide_id else None,
+        "cache_hit": cache_hit,
     }
     
     if log_prompts:

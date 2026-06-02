@@ -3,7 +3,7 @@ from __future__ import annotations
 from sqlalchemy import select
 
 from slaides.db.base import get_session_factory
-from slaides.db.models import LlmCall, Workspace
+from slaides.db.models import LlmCall, LlmInterpretCache, SessionEvent, Workspace
 from slaides.llm import service as llm_service
 
 
@@ -247,6 +247,173 @@ async def test_guest_can_interpret_live_slide_text_only(client, auth_headers, mo
         assert rows[0].purpose == "interpret"
         assert rows[0].user_id is None
         assert str(rows[0].session_id) == live["id"]
+
+
+async def test_interpret_cache_reuses_identical_session_slide_request(client, auth_headers, monkeypatch):
+    calls = 0
+
+    async def fake_stream_openai_chunks(**kwargs):
+        nonlocal calls
+        calls += 1
+        yield f"Definition #{calls}", {"prompt_tokens": 5, "completion_tokens": 2}
+
+    monkeypatch.setattr(llm_service, "_stream_openai_chunks", fake_stream_openai_chunks)
+    settings = await client.patch(
+        "/api/v1/workspace",
+        headers=auth_headers,
+        json={"llm_api_key": "sk-test-secret", "llm_model": "gpt-test"},
+    )
+    assert settings.status_code == 200, settings.text
+    deck = (await client.post("/api/v1/decks", json={"title": "Cache deck"}, headers=auth_headers)).json()
+    live = (await client.post("/api/v1/sessions", json={"deck_id": deck["id"]}, headers=auth_headers)).json()
+    slide_id = deck["slides"][0]["id"]
+    body = {
+        "purpose": "interpret",
+        "prompt": "show a simple definition",
+        "context": {"selection": "residual", "session_id": live["id"], "slide_id": slide_id},
+    }
+
+    first = await client.post("/api/v1/llm/complete", headers=auth_headers, json=body)
+    second = await client.post("/api/v1/llm/complete", headers=auth_headers, json=body)
+
+    assert first.status_code == 200, first.text
+    assert second.status_code == 200, second.text
+    assert '"text": "Definition #1"' in first.text
+    assert '"text": "Definition #1"' in second.text
+    assert calls == 1
+
+    factory = get_session_factory()
+    async with factory() as session:
+        rows = (await session.execute(select(LlmCall).order_by(LlmCall.id))).scalars().all()
+        assert [row.cache_hit for row in rows] == [False, True]
+        assert rows[1].tokens_in is None
+        assert rows[1].tokens_out is None
+        events = (
+            await session.execute(
+                select(SessionEvent).where(SessionEvent.event_type == "llm.interpret").order_by(SessionEvent.id)
+            )
+        ).scalars().all()
+        assert [event.payload["cache_hit"] for event in events] == [False, True]
+        cache_rows = (await session.execute(select(LlmInterpretCache))).scalars().all()
+        assert len(cache_rows) == 1
+        assert cache_rows[0].response_text == "Definition #1"
+
+
+async def test_interpret_cache_misses_for_different_slide_or_session(client, auth_headers, monkeypatch):
+    calls = 0
+
+    async def fake_stream_openai_chunks(**kwargs):
+        nonlocal calls
+        calls += 1
+        yield f"Answer {calls}", {"prompt_tokens": 3, "completion_tokens": 1}
+
+    monkeypatch.setattr(llm_service, "_stream_openai_chunks", fake_stream_openai_chunks)
+    settings = await client.patch(
+        "/api/v1/workspace",
+        headers=auth_headers,
+        json={"llm_api_key": "sk-test-secret", "llm_model": "gpt-test"},
+    )
+    assert settings.status_code == 200, settings.text
+    deck = (await client.post("/api/v1/decks", json={"title": "Cache misses"}, headers=auth_headers)).json()
+    second_slide = (
+        await client.post(
+            f"/api/v1/decks/{deck['id']}/slides",
+            json={"markdown": "# Second\n"},
+            headers=auth_headers,
+        )
+    ).json()
+    session_one = (await client.post("/api/v1/sessions", json={"deck_id": deck["id"]}, headers=auth_headers)).json()
+    session_two = (
+        await client.post(
+            "/api/v1/sessions/preview",
+            json={"deck_id": deck["id"], "audience_count": 1},
+            headers=auth_headers,
+        )
+    ).json()
+
+    base = {"purpose": "interpret", "prompt": "show a simple definition"}
+    requests = [
+        {**base, "context": {"selection": "residual", "session_id": session_one["id"], "slide_id": deck["slides"][0]["id"]}},
+        {**base, "context": {"selection": "residual", "session_id": session_one["id"], "slide_id": second_slide["id"]}},
+        {**base, "context": {"selection": "residual", "session_id": session_two["session_id"], "slide_id": deck["slides"][0]["id"]}},
+    ]
+
+    for body in requests:
+        res = await client.post("/api/v1/llm/complete", headers=auth_headers, json=body)
+        assert res.status_code == 200, res.text
+
+    assert calls == 3
+
+
+async def test_interpret_cache_cleared_when_session_ends(client, auth_headers, monkeypatch):
+    async def fake_stream_openai_chunks(**kwargs):
+        yield "Cached answer", {"prompt_tokens": 3, "completion_tokens": 1}
+
+    monkeypatch.setattr(llm_service, "_stream_openai_chunks", fake_stream_openai_chunks)
+    settings = await client.patch(
+        "/api/v1/workspace",
+        headers=auth_headers,
+        json={"llm_api_key": "sk-test-secret", "llm_model": "gpt-test"},
+    )
+    assert settings.status_code == 200, settings.text
+    deck = (await client.post("/api/v1/decks", json={"title": "Cache cleanup"}, headers=auth_headers)).json()
+    live = (await client.post("/api/v1/sessions", json={"deck_id": deck["id"]}, headers=auth_headers)).json()
+    res = await client.post(
+        "/api/v1/llm/complete",
+        headers=auth_headers,
+        json={
+            "purpose": "interpret",
+            "prompt": "show a simple definition",
+            "context": {"selection": "residual", "session_id": live["id"], "slide_id": deck["slides"][0]["id"]},
+        },
+    )
+    assert res.status_code == 200, res.text
+
+    factory = get_session_factory()
+    async with factory() as session:
+        assert (await session.execute(select(LlmInterpretCache))).scalars().all()
+
+    ended = await client.post(f"/api/v1/sessions/{live['id']}/end", headers=auth_headers)
+    assert ended.status_code == 200, ended.text
+
+    async with factory() as session:
+        assert (await session.execute(select(LlmInterpretCache))).scalars().all() == []
+
+
+async def test_duplicate_interpret_cache_insert_does_not_abort_accounting(client, auth_headers, monkeypatch):
+    async def fake_stream_openai_chunks(**kwargs):
+        yield "Fresh answer", {"prompt_tokens": 3, "completion_tokens": 1}
+
+    async def fake_cache_lookup(*args, **kwargs):
+        return None
+
+    monkeypatch.setattr(llm_service, "_stream_openai_chunks", fake_stream_openai_chunks)
+    monkeypatch.setattr(llm_service, "_lookup_interpret_cache", fake_cache_lookup)
+    settings = await client.patch(
+        "/api/v1/workspace",
+        headers=auth_headers,
+        json={"llm_api_key": "sk-test-secret", "llm_model": "gpt-test"},
+    )
+    assert settings.status_code == 200, settings.text
+    deck = (await client.post("/api/v1/decks", json={"title": "Cache race"}, headers=auth_headers)).json()
+    live = (await client.post("/api/v1/sessions", json={"deck_id": deck["id"]}, headers=auth_headers)).json()
+    body = {
+        "purpose": "interpret",
+        "prompt": "show a simple definition",
+        "context": {"selection": "residual", "session_id": live["id"], "slide_id": deck["slides"][0]["id"]},
+    }
+
+    first = await client.post("/api/v1/llm/complete", headers=auth_headers, json=body)
+    second = await client.post("/api/v1/llm/complete", headers=auth_headers, json=body)
+
+    assert first.status_code == 200, first.text
+    assert second.status_code == 200, second.text
+    factory = get_session_factory()
+    async with factory() as session:
+        assert len((await session.execute(select(LlmInterpretCache))).scalars().all()) == 1
+        calls = (await session.execute(select(LlmCall).order_by(LlmCall.id))).scalars().all()
+        assert len(calls) == 2
+        assert [call.cache_hit for call in calls] == [False, False]
 
 
 def test_scan_theme_violations_flags_hex_and_rgb():
