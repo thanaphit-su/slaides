@@ -1326,10 +1326,22 @@ async function sendMessage(overrideText?: string) {
         ? "Cancelled. Partial output discarded — send again to retry."
         : "Cancelled before any output.";
     } else {
-      if (raw.trim()) {
+      console.error("[widget_generate] failed", {
+        err,
+        rawLength: raw.length,
+        raw,
+        aborted: controller.signal.aborted,
+      });
+      if (err instanceof ApiError) {
+        // Backend/upstream failure (rate limit, LLM error, DB) — surface the real detail.
+        assistantMessage.text = `AI request failed: ${err.message}`;
+        if (raw.trim()) assistantMessage.raw = raw;
+        error.value = err.message;
+      } else if (raw.trim()) {
+        // The model streamed text but it isn't a valid workflow envelope.
         assistantMessage.text = "AI returned an invalid widget workflow response. Ask it to try again.";
         assistantMessage.raw = raw;
-        error.value = "AI response was not a valid widget workflow.";
+        error.value = `Invalid widget workflow: ${err instanceof Error ? err.message : "unknown error"}`;
       } else {
         const msg = err instanceof Error ? err.message : "Could not generate widget.";
         assistantMessage.text = msg;
@@ -1740,6 +1752,14 @@ async function doDelete(force: boolean) {
           >
             {{ streamTail }}
           </div>
+
+          <details
+            v-if="message.raw && streamingMessageId !== message.id"
+            class="chat-raw-output"
+          >
+            <summary>Show raw AI output</summary>
+            <pre class="t-mono">{{ message.raw }}</pre>
+          </details>
 
           <div v-if="message.images?.length" class="chat-image-strip">
             <img v-for="image in message.images" :key="image.id" :src="image.data_url" :alt="image.name" />
@@ -2577,6 +2597,31 @@ async function doDelete(force: boolean) {
   /* Top-fade so the user sees the tail without abrupt clipping. */
   mask-image: linear-gradient(to bottom, transparent 0, var(--ink) 24px);
   -webkit-mask-image: linear-gradient(to bottom, transparent 0, var(--ink) 24px);
+}
+
+.chat-raw-output {
+  max-width: 100%;
+  font-size: 11px;
+  color: var(--ink-soft);
+}
+
+.chat-raw-output summary {
+  cursor: pointer;
+  user-select: none;
+  padding: 2px 0;
+}
+
+.chat-raw-output pre {
+  margin: 6px 0 0;
+  border: 1px solid var(--rule-soft);
+  border-radius: var(--r-sm);
+  background: var(--paper-2);
+  padding: 8px 10px;
+  max-height: 240px;
+  overflow: auto;
+  white-space: pre-wrap;
+  word-break: break-all;
+  line-height: 1.45;
 }
 
 .chat-image-strip {

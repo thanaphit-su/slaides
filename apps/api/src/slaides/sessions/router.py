@@ -78,7 +78,9 @@ async def _active_session_for_owner(
     ).scalar_one_or_none()
 
 
-async def _snapshot(session: AsyncSession, row: SessionRow) -> SessionSnapshot:
+async def _snapshot(
+    session: AsyncSession, row: SessionRow, *, viewer: str = "host"
+) -> SessionSnapshot:
     deck = (await session.execute(select(Deck).where(Deck.id == row.deck_id))).scalar_one()
     slides = await deck_service.list_slides(session, deck.id)
     sections = await deck_service.list_sections(session, deck.id)
@@ -92,6 +94,11 @@ async def _snapshot(session: AsyncSession, row: SessionRow) -> SessionSnapshot:
     questions = await service.list_questions(session, row.id)
     participants = await service.list_participants(session, row.id)
     placement_states = await placement_state_service.list_session_placement_states(session, row.id)
+    if viewer == "audience":
+        # `collect` widgets are presenter-only: their entries hold every
+        # audience member's answer, so they must never appear in the audience
+        # snapshot. Each audience member renders only its own answer locally.
+        placement_states = [p for p in placement_states if p.aggregator != "collect"]
     return SessionSnapshot(
         id=row.id,
         code=row.code,
@@ -248,7 +255,7 @@ async def get_audience_snapshot(
     ).scalar_one_or_none()
     if row is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="session not found")
-    return await _snapshot(session, row)
+    return await _snapshot(session, row, viewer="audience")
 
 
 @router.get("/{session_id}", response_model=SessionSnapshot)

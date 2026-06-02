@@ -144,6 +144,131 @@ describe("WidgetFrame reactivity", () => {
     expect(srcdoc).toMatch(/img-src\s+data:\s+https:/);
   });
 
+  it("replays persisted per-viewer state into boot.state on (re)mount", () => {
+    // Simulate a prior submission saved by the host before the iframe was
+    // remounted (audience navigated away from the slide and back).
+    sessionStorage.setItem(
+      "slaides:wstate:w-1:p-1:audience",
+      JSON.stringify({ answer: "my saved answer" }),
+    );
+    try {
+      const wrapper = mount(WidgetFrame, {
+        props: { widget: fakeWidget(), placementId: "p-1", bootProps: {}, role: "audience" },
+      });
+      const srcdoc = wrapper.find("iframe").attributes("srcdoc") || "";
+      // boot.state is baked into __slaides_boot so getState() returns it
+      // synchronously at widget script-eval time.
+      expect(srcdoc).toContain('"state":{"answer":"my saved answer"}');
+    } finally {
+      sessionStorage.removeItem("slaides:wstate:w-1:p-1:audience");
+    }
+  });
+
+  it("persists a state.set message from the iframe to host sessionStorage", () => {
+    const key = "slaides:wstate:w-1:p-1:audience";
+    sessionStorage.removeItem(key);
+    try {
+      const wrapper = mount(WidgetFrame, {
+        props: { widget: fakeWidget(), placementId: "p-1", bootProps: {}, role: "audience" },
+      });
+      const iframe = wrapper.find("iframe").element as HTMLIFrameElement;
+      const fakeWin = {};
+      // The host identifies the sender by contentWindow identity (null-origin
+      // sandbox makes origin checks meaningless).
+      Object.defineProperty(iframe, "contentWindow", { configurable: true, value: fakeWin });
+
+      const ev = new MessageEvent("message", {
+        data: { slaides: true, type: "state.set", payload: { key: "answer", value: "hello" } },
+      });
+      Object.defineProperty(ev, "source", { configurable: true, value: fakeWin });
+      window.dispatchEvent(ev);
+
+      expect(JSON.parse(sessionStorage.getItem(key) || "{}")).toEqual({ answer: "hello" });
+    } finally {
+      sessionStorage.removeItem(key);
+    }
+  });
+
+  it("scopes per-viewer state by participant ref so co-located audiences don't collide", () => {
+    // The multi-audience preview harness mounts every audience iframe in one
+    // same-origin page → one shared sessionStorage. A role-only key made them
+    // clobber each other so a non-submitter saw the last writer's answer.
+    const keyAlice = "slaides:wstate:w-1:p-1:alice";
+    const keyBob = "slaides:wstate:w-1:p-1:bob";
+    sessionStorage.setItem(keyAlice, JSON.stringify({ answer: "Hi" }));
+    sessionStorage.setItem(keyBob, JSON.stringify({ answer: "Hello" }));
+    try {
+      // Bob's iframe replays Bob's own answer, not a shared latest.
+      const bob = mount(WidgetFrame, {
+        props: {
+          widget: fakeWidget(),
+          placementId: "p-1",
+          bootProps: {},
+          role: "audience",
+          participant: { ref: "bob" },
+        },
+      });
+      expect(bob.find("iframe").attributes("srcdoc") || "").toContain('"state":{"answer":"Hello"}');
+
+      // Carol never submitted → her own (empty) slot, NOT Bob's "Hello".
+      const carol = mount(WidgetFrame, {
+        props: {
+          widget: fakeWidget(),
+          placementId: "p-1",
+          bootProps: {},
+          role: "audience",
+          participant: { ref: "carol" },
+        },
+      });
+      expect(carol.find("iframe").attributes("srcdoc") || "").toContain('"state":{}');
+    } finally {
+      sessionStorage.removeItem(keyAlice);
+      sessionStorage.removeItem(keyBob);
+    }
+  });
+
+  it("persists a state.set message under the participant-scoped key", () => {
+    const scoped = "slaides:wstate:w-1:p-1:alice";
+    const roleOnly = "slaides:wstate:w-1:p-1:audience";
+    sessionStorage.removeItem(scoped);
+    sessionStorage.removeItem(roleOnly);
+    try {
+      const wrapper = mount(WidgetFrame, {
+        props: {
+          widget: fakeWidget(),
+          placementId: "p-1",
+          bootProps: {},
+          role: "audience",
+          participant: { ref: "alice" },
+        },
+      });
+      const iframe = wrapper.find("iframe").element as HTMLIFrameElement;
+      const fakeWin = {};
+      Object.defineProperty(iframe, "contentWindow", { configurable: true, value: fakeWin });
+      const ev = new MessageEvent("message", {
+        data: { slaides: true, type: "state.set", payload: { key: "answer", value: "Hi" } },
+      });
+      Object.defineProperty(ev, "source", { configurable: true, value: fakeWin });
+      window.dispatchEvent(ev);
+
+      expect(JSON.parse(sessionStorage.getItem(scoped) || "{}")).toEqual({ answer: "Hi" });
+      // The old role-only key must NOT be written — that was the collision.
+      expect(sessionStorage.getItem(roleOnly)).toBeNull();
+    } finally {
+      sessionStorage.removeItem(scoped);
+      sessionStorage.removeItem(roleOnly);
+    }
+  });
+
+  it("does not persist viewer state without a placementId (editor preview is ephemeral)", () => {
+    const wrapper = mount(WidgetFrame, {
+      props: { widget: fakeWidget(), placementId: "", bootProps: {}, role: "preview" },
+    });
+    const srcdoc = wrapper.find("iframe").attributes("srcdoc") || "";
+    // No placement → boot.state is an empty object, nothing keyed in storage.
+    expect(srcdoc).toContain('"state":{}');
+  });
+
   it("bakes the inspector script when window.__slaides_preview is true", () => {
     (window as unknown as { __slaides_preview?: boolean }).__slaides_preview = true;
     try {

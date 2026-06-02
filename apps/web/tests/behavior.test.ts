@@ -25,6 +25,23 @@ describe("sanitiseBehavior", () => {
     expect(sanitiseBehavior({ kind: "quiet", aggregator: "tally" })).toEqual({ kind: "quiet" });
   });
 
+  it("accepts collect behavior and defaults its contribution_schema", () => {
+    // collect carries no aggregator — the server fixes it to "collect".
+    expect(sanitiseBehavior({ kind: "collect" })).toEqual({
+      kind: "collect",
+      contribution_schema: { type: "string" },
+    });
+  });
+
+  it("preserves a collect contribution_schema when it is an object", () => {
+    expect(
+      sanitiseBehavior({ kind: "collect", contribution_schema: { type: "object" } }),
+    ).toEqual({
+      kind: "collect",
+      contribution_schema: { type: "object" },
+    });
+  });
+
   it("adds a default contribution_schema for loud behavior when missing", () => {
     expect(sanitiseBehavior({ kind: "loud", aggregator: "tally" })).toEqual({
       kind: "loud",

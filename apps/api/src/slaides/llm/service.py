@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import logging
 import re
 import time
 import uuid
@@ -16,6 +17,8 @@ from ..db.models import AppUser, LlmCall, Workspace
 from ..settings import get_settings
 from .crypto import decrypt_workspace_secret
 from .schemas import LlmCompleteRequest
+
+logger = logging.getLogger(__name__)
 
 # Detects hardcoded color literals — hex (`#fff`, `#0b0d10`, `#0b0d10ff`),
 # functional notations (`rgb(...)`, `rgba(...)`, `hsl(...)`, `hsla(...)`).
@@ -239,8 +242,30 @@ def _scan_behavior_violations(
             )
         return messages
 
+    if kind == "collect":
+        if not has_contribute:
+            messages.append(
+                "Collect widget never calls slaides.contribute() — the audience "
+                "can't submit an answer for the presenter to see."
+            )
+        if not isinstance(behavior.get("contribution_schema"), dict):
+            messages.append(
+                "Collect widget is missing behavior.contribution_schema — declare "
+                "the shape the server should expect (e.g. `{ \"type\": \"string\" }`)."
+            )
+        if "slaides.role" not in body and ".role" not in body:
+            messages.append(
+                "Collect widget never branches on window.slaides.role — presenter "
+                "and audience need different views (presenter sees all entries via "
+                "on('state'); each audience member sees only its own). Without the "
+                "role branch it will render the same — and wrong — for both."
+            )
+        return messages
+
     if kind is not None:
-        messages.append(f"Unknown behavior.kind {kind!r} — must be 'quiet' or 'loud'.")
+        messages.append(
+            f"Unknown behavior.kind {kind!r} — must be 'quiet', 'loud', or 'collect'."
+        )
     return messages
 
 
@@ -621,14 +646,17 @@ when one is present; treat the participant as Anonymous in any leaderboard or
 public list. The widget will be re-mounted on rejoin, so identity is stable
 for the lifetime of a session for that participant.
 
-BEHAVIOR CONTRACT — REQUIRED. Every widget declares whether it's Quiet (local
-to each viewer; no server contact) or Loud (audience contributions aggregate
-into a single shared state via the server). The behavior shows up in the
-top-level `behavior` field of the JSON document you return:
+BEHAVIOR CONTRACT — REQUIRED. Every widget declares one of THREE kinds: Quiet
+(local to each viewer; no server contact), Loud (audience contributions
+aggregate into a single shared state every viewer sees), or Collect (audience
+answers stream to the presenter only; each audience member sees just their own).
+The behavior shows up in the top-level `behavior` field of the JSON document you
+return:
 
     "behavior": { "kind": "quiet" }
     "behavior": { "kind": "loud", "aggregator": "<one-of-five>",
                   "contribution_schema": { "type": "..." } }
+    "behavior": { "kind": "collect", "contribution_schema": { "type": "..." } }
 
 Quiet (`kind: "quiet"`):
   - DO NOT call `window.slaides.contribute(...)` — it is rejected at runtime.
@@ -690,6 +718,55 @@ For Loud widgets `props_schema` MUST declare the contribution shape under
     "behavior": {
       "kind": "loud",
       "aggregator": "tally",
+      "contribution_schema": { "type": "string" }
+    }
+
+Collect (`kind: "collect"`): ASYMMETRIC visibility — the presenter sees EVERY
+answer; each audience member sees ONLY their own. Use this whenever the prompt
+asks for private audience responses that the presenter reviews, e.g. a question
+board, exit ticket, anonymous check-in, or "submit your answer, only I (the
+presenter) see all of them". There is no aggregator to choose — omit it; the
+server keeps an append-shaped list `{ entries: [{ref, value, ts}], total }`.
+
+How collect differs at runtime:
+  - The audience NEVER receives other participants' answers — not over the wire,
+    not in any snapshot. So you CANNOT show the audience a shared list/tally.
+  - The `state` event (the full entry list) is delivered to the PRESENTER ONLY.
+  - You MUST branch the UI on `window.slaides.role`:
+      * role === 'instructor'  → render every entry from the `state` event.
+      * otherwise (audience)   → render only THIS viewer's own answer. The
+        audience tab knows its own value (it just called `contribute`); persist
+        it with `setState`/`getState` so it survives a reload. Do NOT rely on
+        the `state` event for the audience — it never arrives.
+
+Concrete collect skeleton (a question board: audience submits, presenter sees all):
+
+    var slaides = window.slaides;
+    var isPresenter = slaides && slaides.role === 'instructor';
+    if (isPresenter) {
+      slaides.on('state', function (msg) {
+        var entries = (msg.state && msg.state.entries) || [];
+        // … render the full list of submitted answers for the presenter …
+      });
+    } else {
+      // Audience: restore + render only this viewer's own answer.
+      var mine = slaides.getState('answer');
+      if (mine) renderOwn(mine);
+      form.addEventListener('submit', function (ev) {
+        ev.preventDefault();
+        var value = input.value.trim();
+        if (!value) return;
+        slaides.contribute(value);   // streams to the presenter
+        slaides.setState('answer', value);
+        renderOwn(value);
+      });
+    }
+
+Collect MUST declare `behavior.contribution_schema` (same as Loud) and MUST call
+`window.slaides.contribute(value)` from the audience branch:
+
+    "behavior": {
+      "kind": "collect",
       "contribution_schema": { "type": "string" }
     }
 
@@ -1076,6 +1153,13 @@ async def stream_completion(
     except HTTPException as exc:
         yield _sse("error", {"detail": exc.detail})
     except Exception as exc:  # noqa: BLE001
+        logger.exception(
+            "llm stream failed purpose=%s model=%s workspace=%s session=%s",
+            body.purpose,
+            model,
+            workspace.id,
+            session_id,
+        )
         yield _sse("error", {"detail": f"LLM request failed: {exc}"})
     finally:
         elapsed_ms = int((time.perf_counter() - started) * 1000)

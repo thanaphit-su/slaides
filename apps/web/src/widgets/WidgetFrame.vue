@@ -18,8 +18,11 @@ const props = withDefaults(
     fill?: boolean;
     /** Audience identity baked into `window.slaides.participant` so widgets
      * can greet/score by name without re-asking. `display_name` is `null`
-     * for presenter / preview / fully-anonymous joins. */
-    participant?: { display_name?: string | null; anon?: boolean };
+     * for presenter / preview / fully-anonymous joins. `ref` is the stable
+     * per-participant id — used ONLY to scope per-viewer scratch state in
+     * sessionStorage; it is NOT injected into the iframe boot (the widget
+     * still sees `participant.id === null`). */
+    participant?: { display_name?: string | null; anon?: boolean; ref?: string | null };
   }>(),
   { role: "preview", minHeight: 80, fill: false },
 );
@@ -97,6 +100,52 @@ const participantSnapshot = {
   anon: props.participant?.anon ?? false,
 };
 
+// Per-viewer scratch state (slaides.setState/getState). The sandboxed iframe
+// has a null origin and can't use sessionStorage, so the host persists it and
+// replays it as `boot.state` on (re)mount — that's what makes a submitted
+// answer survive navigating away from the slide and back.
+function viewerStateStorageKey(): string | null {
+  if (!props.placementId) return null; // editor preview / thumbnail: ephemeral
+  // Scope by participant_ref, not role: multiple audience members can share one
+  // browsing context (the multi-audience preview harness mounts every audience
+  // iframe in one page → one sessionStorage). A role-only key makes them clobber
+  // each other so everyone reads the last writer's answer. Fall back to role
+  // when there's no participant (single presenter / preview).
+  const viewer = props.participant?.ref || props.role;
+  return `slaides:wstate:${props.widget.id}:${props.placementId}:${viewer}`;
+}
+
+function loadViewerState(): Record<string, unknown> {
+  const key = viewerStateStorageKey();
+  if (!key) return {};
+  try {
+    const raw = sessionStorage.getItem(key);
+    const parsed = raw ? JSON.parse(raw) : null;
+    return parsed && typeof parsed === "object" && !Array.isArray(parsed)
+      ? (parsed as Record<string, unknown>)
+      : {};
+  } catch {
+    return {};
+  }
+}
+
+function persistViewerState(stateKey: string, value: unknown): void {
+  const key = viewerStateStorageKey();
+  if (!key) return;
+  try {
+    const current = loadViewerState();
+    current[stateKey] = value;
+    sessionStorage.setItem(key, JSON.stringify(current));
+  } catch {
+    // sessionStorage unavailable (private mode / SSR / quota) — degrade to the
+    // old in-memory-only behaviour rather than throwing.
+  }
+}
+
+// Snapshot at mount, same rationale as bootProps: a later change must not
+// recompute srcdoc and reload the iframe.
+const bootStateSnapshot = loadViewerState();
+
 const srcdoc = computed(() =>
   buildSrcdoc(
     props.widget,
@@ -105,6 +154,7 @@ const srcdoc = computed(() =>
       role: props.role,
       participant: participantSnapshot,
       behavior: props.widget.behavior || { kind: "quiet" },
+      state: bootStateSnapshot,
     },
     props.fill,
   ),
@@ -264,6 +314,14 @@ function onMessage(ev: MessageEvent) {
   }
   const type = typeof data.type === "string" ? data.type : "";
   if (!type) return;
+  if (type === "state.set") {
+    // Persist per-viewer scratch state so it survives an iframe remount. The
+    // widget already updated its own in-iframe copy; we mirror it to host
+    // sessionStorage and replay via boot.state next mount.
+    const payload = (data.payload || {}) as { key?: unknown; value?: unknown };
+    if (typeof payload.key === "string") persistViewerState(payload.key, payload.value);
+    return;
+  }
   if (type === "resize") {
     // In fill mode the iframe owns the height (via minHeight) and the widget's
     // body resolves to that height via `height:100%`. Echoing scrollHeight back

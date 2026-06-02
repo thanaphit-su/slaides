@@ -26,8 +26,10 @@ export interface RenderOptions {
   /** Role passed into the iframe boot (instructor / audience / preview). */
   widgetRole?: "instructor" | "audience" | "preview";
   /** Audience identity (display_name + anon flag) baked into the iframe
-   * `window.slaides.participant`. Omitted for presenter / preview. */
-  widgetParticipant?: { display_name?: string | null; anon?: boolean };
+   * `window.slaides.participant`. Omitted for presenter / preview. `ref` is the
+   * stable per-participant id used only to scope per-viewer scratch state; it is
+   * not baked into the iframe boot. */
+  widgetParticipant?: { display_name?: string | null; anon?: boolean; ref?: string | null };
 }
 
 export interface Block {

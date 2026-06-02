@@ -246,6 +246,12 @@ AGGREGATORS = {
     "append": append_contribute,
     "set_union": set_union_contribute,
     "keyed_tally": keyed_tally_contribute,
+    # `collect` is append-shaped storage but delivered host-only (presenter sees
+    # every entry; each audience member sees only its own, rendered locally).
+    # The contribution storage is identical to append — the asymmetry is in WS
+    # delivery + snapshot gating, not the aggregator. See ws.py / placement
+    # snapshot privacy gate.
+    "collect": append_contribute,
 }
 
 

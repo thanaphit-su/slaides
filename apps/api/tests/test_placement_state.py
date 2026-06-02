@@ -209,6 +209,93 @@ async def test_placement_state_tally_round_trip(client, auth_headers, app_with_d
     assert entry["closed"] is False
 
 
+async def test_collect_widget_is_host_only_and_hidden_from_audience(
+    client, auth_headers, app_with_db
+):
+    """A `collect` widget delivers contributions to the presenter only. The
+    audience must never receive another participant's answer — not over the WS
+    (host-only broadcast) and not in the /audience snapshot (privacy gate)."""
+    seeded = await _seed_loud_widget(
+        client,
+        auth_headers,
+        behavior={"kind": "collect", "contribution_schema": {"type": "string"}},
+    )
+    session_id = seeded["session_id"]
+    placement_id = seeded["placement_id"]
+
+    ws_hub.set_redis(fakeredis_async.FakeRedis(decode_responses=True))
+    host = _Connection(socket=object(), role="host", participant_id=None, participant_ref=None)
+    alice = _Connection(
+        socket=object(), role="participant", participant_id=uuid.uuid4(), participant_ref="alice"
+    )
+    bob = _Connection(
+        socket=object(), role="participant", participant_id=uuid.uuid4(), participant_ref="bob"
+    )
+    await ws_hub.register(session_id, host)
+    await ws_hub.register(session_id, alice)
+    await ws_hub.register(session_id, bob)
+
+    try:
+        await _handle_client_event(
+            session_id,
+            alice,
+            {"type": "widget.contribute", "payload": {"placement_id": placement_id, "value": "alice answer"}},
+        )
+        await _handle_client_event(
+            session_id,
+            bob,
+            {"type": "widget.contribute", "payload": {"placement_id": placement_id, "value": "bob answer"}},
+        )
+
+        # Presenter sees every entry.
+        msg = await _drain(host, want="widget.state")
+        entries = msg["payload"]["state"]["entries"]
+        # Drain until both answers are present (events arrive incrementally).
+        while len(entries) < 2:
+            msg = await _drain(host, want="widget.state")
+            entries = msg["payload"]["state"]["entries"]
+        values = {e["value"] for e in entries}
+        assert values == {"alice answer", "bob answer"}
+
+        # The audience must NOT have received any widget.state over the WS.
+        with pytest.raises(asyncio.TimeoutError):
+            await _drain(bob, want="widget.state", timeout=0.5)
+
+        # Liveness check: prove bob's subscriber is live (so the absence above
+        # is real, not a dead subscriber) — an all-broadcast still reaches him.
+        await ws_hub.publish(session_id, {"type": "liveness.probe", "payload": {}})
+        await _drain(bob, want="liveness.probe")
+    finally:
+        await ws_hub.aclose()
+
+    # Audience snapshot must EXCLUDE the collect placement entirely.
+    guest = (
+        await client.post(
+            "/api/v1/auth/guest",
+            json={"code": seeded["code"], "email": "late@example.com", "anonymous": True},
+        )
+    ).json()
+    aud_snap = await client.get(
+        f"/api/v1/sessions/{session_id}/audience",
+        headers={"Authorization": f"Bearer {guest['token']}"},
+    )
+    aud_entry = next(
+        (p for p in aud_snap.json()["placement_states"] if p["placement_id"] == placement_id),
+        None,
+    )
+    assert aud_entry is None, "collect answers leaked into the audience snapshot"
+
+    # Host snapshot must INCLUDE it, with every answer.
+    host_snap = await client.get(f"/api/v1/sessions/{session_id}", headers=auth_headers)
+    host_entry = next(
+        (p for p in host_snap.json()["placement_states"] if p["placement_id"] == placement_id),
+        None,
+    )
+    assert host_entry is not None
+    assert host_entry["aggregator"] == "collect"
+    assert {e["value"] for e in host_entry["state"]["entries"]} == {"alice answer", "bob answer"}
+
+
 async def test_quiet_widget_contributions_are_silently_dropped(client, auth_headers):
     seeded = await _seed_loud_widget(
         client, auth_headers, behavior={"kind": "quiet"}

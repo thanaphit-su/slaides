@@ -135,6 +135,52 @@ async def test_create_loud_widget_requires_valid_aggregator_and_contribution_sch
     assert "aggregator" in res.text
 
 
+async def test_create_collect_widget_normalises_behavior(client, auth_headers):
+    deck = await _new_deck(client, auth_headers, "Collect")
+    res = await client.post(
+        f"/api/v1/decks/{deck['id']}/widgets",
+        json={
+            "name": "Question Board",
+            "kind": "custom",
+            "html": "<section>board</section>",
+            "js": (
+                "if (window.slaides.role === 'instructor') {"
+                "  window.slaides.on('state', function(){});"
+                "} else {"
+                "  window.slaides.contribute('hi');"
+                "}"
+            ),
+            "behavior": {
+                "kind": "collect",
+                "contribution_schema": {"type": "string"},
+            },
+        },
+        headers=auth_headers,
+    )
+    assert res.status_code == 201, res.text
+    body = res.json()
+    # The AI doesn't pick an aggregator for collect — the server fixes it.
+    assert body["behavior"]["kind"] == "collect"
+    assert body["behavior"]["aggregator"] == "collect"
+    assert body["behavior"]["contribution_schema"] == {"type": "string"}
+
+
+async def test_create_collect_widget_requires_contribution_schema(client, auth_headers):
+    deck = await _new_deck(client, auth_headers, "Bad collect")
+    res = await client.post(
+        f"/api/v1/decks/{deck['id']}/widgets",
+        json={
+            "name": "Bad collect",
+            "kind": "custom",
+            "html": "<section>x</section>",
+            "behavior": {"kind": "collect"},
+        },
+        headers=auth_headers,
+    )
+    assert res.status_code == 422
+    assert "contribution_schema" in res.text
+
+
 async def test_patch_widget_can_swap_quiet_to_loud(client, auth_headers):
     deck = await _new_deck(client, auth_headers, "Swap")
     w = await _create_widget(client, auth_headers, deck["id"], name="Quiet", kind="custom")

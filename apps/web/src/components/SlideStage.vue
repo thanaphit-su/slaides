@@ -19,8 +19,10 @@ const props = withDefaults(
     interpretToken?: string | null;
     interpretContext?: Record<string, unknown>;
     /** Audience identity to bake into the widget iframe boot so quiz/poll
-     * widgets can score by name without re-asking. Omit for presenter. */
-    participant?: { display_name?: string | null; anon?: boolean };
+     * widgets can score by name without re-asking. Omit for presenter. `ref`
+     * scopes per-viewer scratch state (sessionStorage); it is not baked into
+     * the iframe boot. */
+    participant?: { display_name?: string | null; anon?: boolean; ref?: string | null };
   }>(),
   {
     slim: false,

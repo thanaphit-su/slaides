@@ -9,7 +9,7 @@
  * (rather than silently downgrading a Loud widget to Quiet).
  */
 
-export type BehaviorKind = "quiet" | "loud";
+export type BehaviorKind = "quiet" | "loud" | "collect";
 export type LoudAggregator =
   | "tally"
   | "latest_per_participant"
@@ -40,6 +40,17 @@ export function sanitiseBehavior(raw: unknown): SanitisedBehavior | null {
   if (!isPlainObject(raw)) return null;
   const kind = raw.kind;
   if (kind === "quiet") return { kind: "quiet" };
+  if (kind === "collect") {
+    // Host-only collection: contributions stream to the presenter, each
+    // audience member sees only its own answer. No aggregator to pick — the
+    // server fixes it to "collect" (append-shaped storage).
+    return {
+      kind: "collect",
+      contribution_schema: isPlainObject(raw.contribution_schema)
+        ? raw.contribution_schema
+        : { type: "string" },
+    };
+  }
   if (kind !== "loud") return null;
 
   const result: SanitisedBehavior = { kind: "loud" };

@@ -254,6 +254,7 @@ function showToast(message: string) {
         :participant="{
           display_name: guest?.display_name ?? null,
           anon: guest?.anon ?? false,
+          ref: guest?.participant_ref ?? null,
         }"
         @widget-event="(e) => session.forwardWidgetEvent(e.placement, { type: e.type, payload: e.payload })"
       />

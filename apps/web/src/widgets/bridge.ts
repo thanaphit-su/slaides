@@ -16,7 +16,13 @@ export const WIDGET_BRIDGE_SOURCE = String.raw`
 (function () {
   var boot = window.__slaides_boot || {};
   var subs = Object.create(null);
-  var pendingState = Object.create(null);
+  // Per-viewer scratch state. Seeded from boot.state so it survives an iframe
+  // remount (e.g. the audience navigates away from the slide and back): the
+  // host persists every setState to its own sessionStorage and replays the map
+  // here at mount. The sandbox=allow-scripts iframe has a null origin and
+  // cannot use sessionStorage itself, so the host must mediate.
+  var pendingState =
+    boot.state && typeof boot.state === 'object' ? boot.state : Object.create(null);
 
   function emit(type, payload) {
     // sandbox="allow-scripts" (no allow-same-origin) gives this iframe an

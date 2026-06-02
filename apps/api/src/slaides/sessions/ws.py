@@ -293,19 +293,28 @@ async def broadcast_widget_state(
     *,
     state_version: int,
     closed: bool = False,
+    role_target: str | None = None,
 ) -> None:
-    await hub.publish(
-        session_id,
-        {
-            "type": "widget.state",
-            "payload": {
-                "placement_id": placement_id,
-                "state": state,
-                "state_version": state_version,
-                "closed": closed,
-            },
+    """Broadcast a widget's aggregated state.
+
+    `role_target` restricts delivery to connections of that role (e.g. "host"
+    for `collect` widgets, where the presenter sees every entry but the audience
+    must never receive other participants' answers). Defaults to all connections
+    for the standard loud-widget shared projection.
+    """
+    event = {
+        "type": "widget.state",
+        "payload": {
+            "placement_id": placement_id,
+            "state": state,
+            "state_version": state_version,
+            "closed": closed,
         },
-    )
+    }
+    if role_target is not None:
+        await hub.publish_to_role(session_id, role_target, event)
+    else:
+        await hub.publish(session_id, event)
 
 
 # Emitted when the presenter edits a widget mid-session and confirms the
@@ -556,7 +565,8 @@ async def _handle_iframe_contribute(
             ).scalar_one_or_none()
             if revision is not None:
                 behavior = revision.behavior or behavior
-        if behavior.get("kind") != "loud":
+        kind = behavior.get("kind")
+        if kind not in ("loud", "collect"):
             return True  # quiet widget — contributions are silently dropped
         aggregator = str(behavior.get("aggregator") or "")
         if not aggregator:
@@ -600,12 +610,16 @@ async def _handle_iframe_contribute(
         )
         await db.commit()
 
+    # `collect` widgets deliver the full entry list to the presenter only — each
+    # audience member renders its own answer locally and must never receive the
+    # others'. Loud widgets broadcast the shared projection to everyone.
     await broadcast_widget_state(
         session_id,
         placement_id,
         state,
         state_version=int(row.state_version or 0),
         closed=row.closed_at is not None,
+        role_target="host" if kind == "collect" else None,
     )
     return True
 

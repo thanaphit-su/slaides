@@ -26,7 +26,7 @@ from .aggregators import (
 )
 
 
-VALID_AGGREGATORS = {"tally", "latest_per_participant", "append", "set_union", "keyed_tally"}
+VALID_AGGREGATORS = {"tally", "latest_per_participant", "append", "set_union", "keyed_tally", "collect"}
 
 
 async def load_placement_state(

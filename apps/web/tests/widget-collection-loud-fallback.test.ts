@@ -341,7 +341,7 @@ describe("WidgetCollection — structured widget workflow", () => {
     await sendPrompt(wrapper);
 
     expect(wrapper.find(".widget-preview-card").exists()).toBe(false);
-    expect(wrapper.text()).toContain("AI response was not a valid widget workflow.");
+    expect(wrapper.text()).toContain("AI returned an invalid widget workflow response.");
     expect(createInDeckMock).not.toHaveBeenCalled();
   });
 

@@ -285,10 +285,25 @@ def _normalise_behavior(raw: dict | None) -> dict:
     kind = raw.get("kind")
     if kind == "quiet":
         return {"kind": "quiet"}
+    if kind == "collect":
+        # Host-only collection: contributions persist (append-shaped) and stream
+        # to the presenter; each audience member renders only its own answer.
+        # The aggregator is fixed to "collect" — the AI doesn't pick one.
+        contribution_schema = raw.get("contribution_schema")
+        if not isinstance(contribution_schema, dict):
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail="behavior.contribution_schema is required for collect widgets",
+            )
+        return {
+            "kind": "collect",
+            "aggregator": "collect",
+            "contribution_schema": contribution_schema,
+        }
     if kind != "loud":
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-            detail="behavior.kind must be quiet or loud",
+            detail="behavior.kind must be quiet, loud, or collect",
         )
     aggregator = raw.get("aggregator")
     if aggregator not in _LOUD_AGGREGATORS:
@@ -646,6 +661,31 @@ async def append_ai_message(
     return WidgetAiMessageOut.model_validate(msg)
 
 
+async def _purge_widget(session: AsyncSession, widget: Widget) -> None:
+    """Null historical references, drop AI threads, then delete the widget row.
+
+    Threads must be deleted first: `widget_ai_message.revision_id` →
+    `widget_revision.id` is NO ACTION, so the `widget` → `widget_revision`
+    cascade trips the FK before the `widget` → thread → message cascade can
+    clear the messages. Wiping the threads here cascades to messages and leaves
+    no `revision_id` references behind. (SQLite tests miss this because the FK
+    is soft there — see migration 0015's note on the constraint.)
+
+    session_slide / interaction_log keep their rows (audit data) but have no
+    ON DELETE action, so their widget pointers are nulled out instead.
+    """
+    await session.execute(
+        update(SessionSlide).where(SessionSlide.widget_id == widget.id).values(widget_id=None)
+    )
+    await session.execute(
+        update(InteractionLog).where(InteractionLog.widget_id == widget.id).values(widget_id=None)
+    )
+    await session.execute(
+        delete(WidgetAiThread).where(WidgetAiThread.widget_id == widget.id)
+    )
+    await session.delete(widget)
+
+
 @router.delete("/{widget_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_widget(
     widget_id: uuid.UUID,
@@ -701,28 +741,7 @@ async def delete_widget(
         for row in placements_rows:
             await session.delete(row)
 
-    # Null out historical session_slide and interaction_log references so the
-    # widget row can be deleted without violating FK constraints. We keep the
-    # log rows themselves — they're audit data scoped to a (now-ended) session.
-    await session.execute(
-        update(SessionSlide).where(SessionSlide.widget_id == w.id).values(widget_id=None)
-    )
-    await session.execute(
-        update(InteractionLog).where(InteractionLog.widget_id == w.id).values(widget_id=None)
-    )
-
-    # Drop AI threads + their messages up front. `widget_ai_thread.widget_id`
-    # already cascades on widget delete, but Postgres runs the
-    # `widget_revision`-side cascade first, and `widget_ai_message.revision_id`
-    # → `widget_revision.id` (NO ACTION) trips before the thread cascade can
-    # clear the messages. Wiping the threads here cascades to messages and
-    # leaves no revision_id references behind. (SQLite tests miss this because
-    # the FK is soft there — see migration 0015's note on the constraint.)
-    await session.execute(
-        delete(WidgetAiThread).where(WidgetAiThread.widget_id == w.id)
-    )
-
-    await session.delete(w)
+    await _purge_widget(session, w)
     return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
@@ -1174,15 +1193,7 @@ async def detach_widget(
             )
         ).scalar_one_or_none()
         if remaining is None:
-            # Mirror delete_widget: null out historical session/interaction
-            # references so the row can be removed without FK violation.
-            await session.execute(
-                update(SessionSlide).where(SessionSlide.widget_id == widget.id).values(widget_id=None)
-            )
-            await session.execute(
-                update(InteractionLog).where(InteractionLog.widget_id == widget.id).values(widget_id=None)
-            )
-            await session.delete(widget)
+            await _purge_widget(session, widget)
 
     await session.flush()
     return Response(status_code=status.HTTP_204_NO_CONTENT)
