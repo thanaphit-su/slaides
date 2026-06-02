@@ -355,6 +355,7 @@ watch(
             slide_id: currentDeckSlide.id,
             deck_title: session.snapshot?.deck_title,
           }"
+          :interpret-quick-options="session.snapshot?.interpret_quick_options || []"
           @widget-event="(e) => session.forwardWidgetEvent(e.placement, { type: e.type, payload: e.payload })"
         />
         <LivePollSlide

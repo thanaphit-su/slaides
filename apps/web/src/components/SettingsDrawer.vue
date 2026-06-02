@@ -2,8 +2,9 @@
 import { computed, reactive, ref, watch } from "vue";
 import { workspaceApi } from "@/api/workspace";
 import { llmApi } from "@/api/llm";
+import { useSessionStore } from "@/stores/session";
 import Icon from "@/components/Icon.vue";
-import type { LlmCapability, LlmModelConfig, Workspace, WorkspacePatch } from "@/api/types";
+import type { InterpretQuickOption, LlmCapability, LlmModelConfig, Workspace, WorkspacePatch } from "@/api/types";
 
 const props = defineProps<{
   open: boolean;
@@ -15,6 +16,7 @@ const emit = defineEmits<{
   (e: "close"): void;
   (e: "start-session"): void;
   (e: "sign-out"): void;
+  (e: "saved", workspace: Workspace): void;
 }>();
 
 const tab = ref<"session" | "llm" | "display" | "account">("llm");
@@ -25,6 +27,13 @@ const status = ref<string | null>(null);
 const error = ref<string | null>(null);
 const clearKey = ref(false);
 const advancedModelId = ref<string | null>(null);
+const session = useSessionStore();
+
+const defaultInterpretQuickOptions: InterpretQuickOption[] = [
+  { label: "AI", instruction: "in plain English" },
+  { label: "Simple definition", instruction: "show a simple definition" },
+  { label: "Why it matters", instruction: "explain why this matters for this slide" },
+];
 
 const capabilities: Array<{ key: LlmCapability; title: string; description: string }> = [
   {
@@ -58,6 +67,7 @@ const form = reactive({
     interpret: "gpt-4.1-mini",
     widget_generate: "gpt-4.1-mini",
   } as Record<LlmCapability, string | null>,
+  interpretQuickOptions: defaultInterpretQuickOptions.map((option) => ({ ...option })) as InterpretQuickOption[],
   keyConfigured: false,
   logLlmPromptsForTranscript: false,
 });
@@ -94,6 +104,16 @@ function cleanModel(model: LlmModelConfig): LlmModelConfig {
   };
 }
 
+function cleanInterpretQuickOptions(options: InterpretQuickOption[]): InterpretQuickOption[] {
+  return options
+    .map((option) => ({
+      label: option.label.trim(),
+      instruction: option.instruction.trim(),
+    }))
+    .filter((option) => option.label && option.instruction)
+    .slice(0, 3);
+}
+
 function applyCapabilityDefaults(primaryModelId: string, ws?: Workspace) {
   for (const cap of capabilities) {
     const assigned = ws?.llm_capability_models?.[cap.key];
@@ -109,6 +129,9 @@ function applyWorkspace(ws: Workspace) {
     .filter((model) => model.id);
   form.models = models.length ? models : [defaultModel()];
   applyCapabilityDefaults(form.models[0].id, ws);
+  const quickOptions = cleanInterpretQuickOptions(ws.interpret_quick_options || []);
+  form.interpretQuickOptions = (quickOptions.length ? quickOptions : defaultInterpretQuickOptions)
+    .map((option) => ({ ...option }));
   form.keyConfigured = ws.llm_key_configured;
   form.logLlmPromptsForTranscript = ws.log_llm_prompts_for_transcript ?? false;
   form.apiKey = "";
@@ -129,6 +152,11 @@ async function load() {
 }
 
 async function save() {
+  const saved = await saveWorkspace();
+  if (saved) status.value = "Saved.";
+}
+
+async function saveWorkspace(): Promise<Workspace | null> {
   saving.value = true;
   error.value = null;
   status.value = null;
@@ -152,16 +180,27 @@ async function save() {
       llm_models: models,
       llm_capability_models: capabilityModels,
       llm_caps: Object.fromEntries(capabilities.map((cap) => [cap.key, capabilityModels[cap.key] !== null])),
+      interpret_quick_options: cleanInterpretQuickOptions(form.interpretQuickOptions),
       log_llm_prompts_for_transcript: form.logLlmPromptsForTranscript,
     };
     if (form.apiKey.trim() || clearKey.value) patch.llm_api_key = form.apiKey.trim();
-    applyWorkspace(await workspaceApi.patch(patch));
-    status.value = "Saved.";
+    const saved = await workspaceApi.patch(patch);
+    applyWorkspace(saved);
+    session.setInterpretQuickOptions(saved.interpret_quick_options || []);
+    emit("saved", saved);
+    return saved;
   } catch (err) {
     error.value = err instanceof Error ? err.message : "Could not save settings.";
+    return null;
   } finally {
     saving.value = false;
   }
+}
+
+async function startSessionFromSettings() {
+  const saved = await saveWorkspace();
+  if (!saved) return;
+  emit("start-session");
 }
 
 async function testConnection() {
@@ -220,6 +259,19 @@ function onModelIdInput(model: LlmModelConfig, nextId: string) {
 
 function setCapabilityModel(key: LlmCapability, raw: string) {
   form.capabilityModels[key] = raw || null;
+}
+
+function addInterpretQuickOption() {
+  if (form.interpretQuickOptions.length >= 3) return;
+  form.interpretQuickOptions.push({ label: "", instruction: "" });
+}
+
+function removeInterpretQuickOption(index: number) {
+  form.interpretQuickOptions.splice(index, 1);
+}
+
+function resetInterpretQuickOptions() {
+  form.interpretQuickOptions = defaultInterpretQuickOptions.map((option) => ({ ...option }));
 }
 
 watch(
@@ -283,18 +335,80 @@ watch(tab, () => {
               <p>Take this deck live. Audience members join by code or share link.</p>
               <button
                 class="btn btn-primary"
-                :disabled="!props.canStartSession"
+                :disabled="!props.canStartSession || saving"
                 style="width: 100%; justify-content: center"
-                @click="emit('start-session')"
+                @click="startSessionFromSettings"
               >
                 <span class="live-dot" />
-                Start session
+                {{ saving ? "Saving..." : "Start session" }}
               </button>
             </div>
             <div class="settings-block">
               <h3>Recordings & transcripts</h3>
               <p>Transcript toggles are part of milestone 5. Interaction logs are already captured for live sessions.</p>
             </div>
+            <div class="settings-block">
+              <h3>AI interpretation quick options</h3>
+              <p>Participants see up to three shortcuts after selecting slide or widget text.</p>
+              <div class="quick-options-list">
+                <div
+                  v-for="(option, index) in form.interpretQuickOptions"
+                  :key="index"
+                  class="quick-option-row"
+                >
+                  <label>
+                    <span class="field-label">Button label</span>
+                    <input
+                      v-model="option.label"
+                      class="input"
+                      maxlength="32"
+                      placeholder="Define"
+                    />
+                  </label>
+                  <label>
+                    <span class="field-label">Prompt instruction</span>
+                    <input
+                      v-model="option.instruction"
+                      class="input"
+                      maxlength="240"
+                      placeholder="show a simple definition"
+                    />
+                  </label>
+                  <button
+                    class="btn btn-ghost btn-sm quick-option-remove"
+                    type="button"
+                    title="Remove option"
+                    @click="removeInterpretQuickOption(index)"
+                  >
+                    <Icon name="trash" :size="13" />
+                  </button>
+                </div>
+              </div>
+              <div class="quick-option-actions">
+                <button
+                  class="btn btn-sm"
+                  type="button"
+                  :disabled="form.interpretQuickOptions.length >= 3"
+                  @click="addInterpretQuickOption"
+                >
+                  <Icon name="plus" :size="13" />
+                  Add option
+                </button>
+                <button class="btn btn-ghost btn-sm" type="button" @click="resetInterpretQuickOptions">
+                  Reset defaults
+                </button>
+              </div>
+              <small class="settings-hint">Leave all options empty to use the built-in defaults during sessions.</small>
+            </div>
+            <div class="settings-actions">
+              <button class="btn" :disabled="saving || testing" @click="save">
+                <Icon name="check" :size="14" />
+                {{ saving ? "Saving..." : "Save session settings" }}
+              </button>
+            </div>
+
+            <p v-if="status" class="status-text">{{ status }}</p>
+            <p v-if="error" class="error-text">{{ error }}</p>
           </section>
 
           <section v-if="tab === 'llm'" class="settings-stack">
@@ -625,6 +739,46 @@ watch(tab, () => {
   font-size: 12px;
 }
 
+.quick-options-list {
+  display: grid;
+  gap: 10px;
+  margin-bottom: 10px;
+}
+
+.quick-option-row {
+  display: grid;
+  grid-template-columns: 0.58fr 1fr auto;
+  align-items: end;
+  gap: 8px;
+  border: 1px solid var(--rule);
+  border-radius: var(--r-md);
+  background: var(--paper-2);
+  padding: 10px;
+}
+
+.quick-option-remove {
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  justify-content: center;
+  color: var(--err);
+}
+
+.quick-option-actions {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.settings-hint {
+  display: block;
+  margin-top: 10px;
+  color: var(--ink-soft);
+  font-size: 12px;
+  line-height: 1.35;
+}
+
 .cap-row {
   display: flex;
   align-items: center;
@@ -837,6 +991,14 @@ watch(tab, () => {
 
   .cap-select {
     flex-basis: auto;
+    width: 100%;
+  }
+
+  .quick-option-row {
+    grid-template-columns: 1fr;
+  }
+
+  .quick-option-remove {
     width: 100%;
   }
 }

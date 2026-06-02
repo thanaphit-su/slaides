@@ -11,7 +11,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from ..auth.deps import GuestPrincipal, current_guest, current_user
 from ..auth.service import issue_guest
 from ..db.deps import db_session
-from ..db.models import AppUser, Deck, InteractionLog, LlmCall, Participant, Slide
+from ..db.models import AppUser, Deck, InteractionLog, LlmCall, Participant, Slide, Workspace
 from ..db.models import Session as SessionRow
 from ..decks import service as deck_service
 from ..decks.schemas import SectionOut, SlideOut, SlideWidgetEmbed
@@ -37,6 +37,7 @@ from .schemas import (
     SessionSlideOut,
     SessionSnapshot,
 )
+from ..workspace.preferences import normalise_interpret_quick_options
 
 # Display names the preview harness hands out to fake guests. Five covers the
 # audience_count cap; the extra names are harmless if the cap changes later.
@@ -82,6 +83,7 @@ async def _snapshot(
     session: AsyncSession, row: SessionRow, *, viewer: str = "host"
 ) -> SessionSnapshot:
     deck = (await session.execute(select(Deck).where(Deck.id == row.deck_id))).scalar_one()
+    workspace = (await session.execute(select(Workspace).where(Workspace.id == row.workspace_id))).scalar_one()
     slides = await deck_service.list_slides(session, deck.id)
     sections = await deck_service.list_sections(session, deck.id)
     placements = await deck_service.load_widget_placements(session, [s.id for s in slides])
@@ -113,6 +115,7 @@ async def _snapshot(
         session_slides=[SessionSlideOut.model_validate(s) for s in session_slides],
         questions=[QuestionOut.model_validate(q) for q in questions],
         audience_count=len(participants),
+        interpret_quick_options=normalise_interpret_quick_options(workspace),
         placement_states=[
             PlacementStateOut(**placement_state_service.project_for_snapshot(p))
             for p in placement_states

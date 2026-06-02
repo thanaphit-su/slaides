@@ -251,6 +251,7 @@ function showToast(message: string) {
           slide_id: currentDeckSlide.id,
           deck_title: session.snapshot?.deck_title,
         }"
+        :interpret-quick-options="session.snapshot?.interpret_quick_options || []"
         :participant="{
           display_name: guest?.display_name ?? null,
           anon: guest?.anon ?? false,

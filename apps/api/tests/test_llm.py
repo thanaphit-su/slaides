@@ -84,6 +84,47 @@ async def test_workspace_model_library_routes_capability_with_parameters(client,
         assert row.model == "widget-vision"
 
 
+async def test_workspace_patch_updates_interpret_quick_options(client, auth_headers):
+    res = await client.patch(
+        "/api/v1/workspace",
+        headers=auth_headers,
+        json={
+            "interpret_quick_options": [
+                {"label": "Define", "instruction": "show a simple definition"},
+                {"label": "Why", "instruction": "explain why this matters"},
+                {"label": "Translate", "instruction": "translate this into Thai"},
+            ],
+        },
+    )
+    assert res.status_code == 200, res.text
+    body = res.json()
+    assert body["interpret_quick_options"] == [
+        {"label": "Define", "instruction": "show a simple definition"},
+        {"label": "Why", "instruction": "explain why this matters"},
+        {"label": "Translate", "instruction": "translate this into Thai"},
+    ]
+
+    get_res = await client.get("/api/v1/workspace", headers=auth_headers)
+    assert get_res.status_code == 200, get_res.text
+    assert get_res.json()["interpret_quick_options"][0]["label"] == "Define"
+
+
+async def test_workspace_rejects_more_than_three_interpret_quick_options(client, auth_headers):
+    res = await client.patch(
+        "/api/v1/workspace",
+        headers=auth_headers,
+        json={
+            "interpret_quick_options": [
+                {"label": "One", "instruction": "one"},
+                {"label": "Two", "instruction": "two"},
+                {"label": "Three", "instruction": "three"},
+                {"label": "Four", "instruction": "four"},
+            ],
+        },
+    )
+    assert res.status_code == 422, res.text
+
+
 def test_widget_workflow_accepts_clarification_question_envelope():
     raw = '{"type":"question","question":"Should this be private or shared?","options":[{"id":"quiet","label":"Private"},{"id":"loud","label":"Shared"}]}'
     parsed = llm_service._parse_widget_workflow(raw)

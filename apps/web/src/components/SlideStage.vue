@@ -5,7 +5,7 @@ import WidgetFrame from "@/widgets/WidgetFrame.vue";
 import { useWidgetsStore } from "@/stores/widgets";
 import Icon from "@/components/Icon.vue";
 import InterpretPopover from "@/components/InterpretPopover.vue";
-import type { Slide, SlideWidgetEmbed, Widget } from "@/api/types";
+import type { InterpretQuickOption, Slide, SlideWidgetEmbed, Widget } from "@/api/types";
 
 const props = withDefaults(
   defineProps<{
@@ -18,6 +18,7 @@ const props = withDefaults(
     interpretEnabled?: boolean;
     interpretToken?: string | null;
     interpretContext?: Record<string, unknown>;
+    interpretQuickOptions?: InterpretQuickOption[];
     /** Audience identity to bake into the widget iframe boot so quiz/poll
      * widgets can score by name without re-asking. Omit for presenter. `ref`
      * scopes per-viewer scratch state (sessionStorage); it is not baked into
@@ -32,6 +33,7 @@ const props = withDefaults(
     interpretEnabled: false,
     interpretToken: null,
     interpretContext: undefined,
+    interpretQuickOptions: () => [],
     participant: undefined,
   },
 );
@@ -41,11 +43,27 @@ const stageRoot = ref<HTMLElement | null>(null);
 const interpretToolbar = ref<{ x: number; y: number; text: string } | null>(null);
 const interpretPopover = ref<{ x: number; y: number; text: string; instruction: string } | null>(null);
 
-const liveInterpretShortcuts = [
-  { label: "AI", title: "Interpret with AI", instruction: "in plain English", icon: "widget" },
-  { label: "Simple definition", title: "Show a simple definition", instruction: "show a simple definition", icon: "search" },
-  { label: "Why it matters", title: "Explain why this matters", instruction: "explain why this matters for this slide", icon: "list" },
+const defaultInterpretQuickOptions: InterpretQuickOption[] = [
+  { label: "AI", instruction: "in plain English" },
+  { label: "Simple definition", instruction: "show a simple definition" },
+  { label: "Why it matters", instruction: "explain why this matters for this slide" },
 ];
+
+const liveInterpretShortcuts = computed(() => {
+  const configured = (props.interpretQuickOptions || [])
+    .map((option) => ({
+      label: option.label.trim(),
+      instruction: option.instruction.trim(),
+    }))
+    .filter((option) => option.label && option.instruction)
+    .slice(0, 3);
+  const options = configured.length ? configured : defaultInterpretQuickOptions;
+  return options.map((option, index) => ({
+    ...option,
+    title: option.label,
+    icon: index === 0 ? "widget" : index === 1 ? "search" : "list",
+  }));
+});
 
 const emit = defineEmits<{
   (
@@ -95,6 +113,7 @@ const Rendered = defineComponent({
             type: event.type,
             payload: event.payload,
           }),
+        onWidgetSelection: (_placement, event) => onWidgetSelection(event),
       });
     };
   },
@@ -158,6 +177,30 @@ function openInterpret(instruction: string) {
   };
   interpretToolbar.value = null;
   document.getSelection()?.removeAllRanges();
+}
+
+function onWidgetSelection(event: { x: number; y: number; text: string; contextMenu?: boolean }) {
+  if (!props.interpretEnabled) return;
+  const text = event.text.trim();
+  if (!text) {
+    interpretToolbar.value = null;
+    return;
+  }
+  if (event.contextMenu) {
+    interpretPopover.value = {
+      x: event.x - 190,
+      y: event.y + 34,
+      text,
+      instruction: "in plain English",
+    };
+    interpretToolbar.value = null;
+    return;
+  }
+  interpretToolbar.value = {
+    x: event.x,
+    y: event.y,
+    text,
+  };
 }
 </script>
 

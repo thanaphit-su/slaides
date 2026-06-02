@@ -7,6 +7,7 @@ from typing import Literal
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from ..decks.schemas import SectionOut, SlideOut
+from ..workspace.schemas import InterpretQuickOption
 
 
 class SessionCreate(BaseModel):
@@ -107,6 +108,7 @@ class SessionSnapshot(BaseModel):
     session_slides: list[SessionSlideOut]
     questions: list[QuestionOut]
     audience_count: int
+    interpret_quick_options: list[InterpretQuickOption] = Field(default_factory=list)
     placement_states: list[PlacementStateOut] = []
 
 

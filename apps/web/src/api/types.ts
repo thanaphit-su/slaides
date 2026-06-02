@@ -170,6 +170,7 @@ export interface Workspace {
   llm_models: LlmModelConfig[];
   llm_capability_models: Record<LlmCapability, string | null>;
   llm_key_configured: boolean;
+  interpret_quick_options: InterpretQuickOption[];
   log_llm_prompts_for_transcript: boolean;
 }
 
@@ -180,10 +181,16 @@ export interface WorkspacePatch {
   llm_caps?: Record<string, boolean>;
   llm_models?: LlmModelConfig[];
   llm_capability_models?: Partial<Record<LlmCapability, string | null>>;
+  interpret_quick_options?: InterpretQuickOption[];
   log_llm_prompts_for_transcript?: boolean;
 }
 
 export type LlmPurpose = "inline_write" | "interpret" | "widget_generate" | "summarise";
+
+export interface InterpretQuickOption {
+  label: string;
+  instruction: string;
+}
 
 export interface SessionListItem {
   id: string;
@@ -312,6 +319,7 @@ export interface SessionSnapshot {
   session_slides: SessionSlide[];
   questions: SessionQuestion[];
   audience_count: number;
+  interpret_quick_options?: InterpretQuickOption[];
   /** Widgets v2 Step 4 — current state for every Loud iframe widget placed
    * on this session's deck. Empty until any audience contributes. */
   placement_states?: PlacementState[];

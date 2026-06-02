@@ -1,4 +1,5 @@
 import { mount } from "@vue/test-utils";
+import { nextTick } from "vue";
 import { createPinia, setActivePinia } from "pinia";
 import { beforeEach, describe, expect, it } from "vitest";
 import SlideStage from "../src/components/SlideStage.vue";
@@ -74,5 +75,60 @@ describe("SlideStage widget revision rendering", () => {
     expect(srcdoc).toContain(".card{border-color:var(--primary)}");
     expect(srcdoc).not.toContain("<p>old live style</p>");
     expect(srcdoc).not.toContain(".card{border-color:var(--muted)}");
+  });
+
+  it("uses configured interpret quick options for selected slide text", async () => {
+    const slide: Slide = {
+      id: "slide-1",
+      deck_id: "deck-1",
+      section_id: null,
+      position: 0,
+      kicker: null,
+      markdown: "Important term",
+      updated_at: new Date().toISOString(),
+      widgets: [],
+    };
+
+    const wrapper = mount(SlideStage, {
+      attachTo: document.body,
+      props: {
+        slide,
+        role: "audience",
+        interpretEnabled: true,
+        interpretQuickOptions: [
+          { label: "Define", instruction: "show a simple definition" },
+          { label: "Translate", instruction: "translate this into Thai" },
+        ],
+      },
+    });
+
+    const textNode = wrapper.find('[data-block="p"]').element.firstChild;
+    expect(textNode).not.toBeNull();
+    const range = document.createRange();
+    range.setStart(textNode!, 0);
+    range.setEnd(textNode!, "Important".length);
+    range.getBoundingClientRect = () => ({
+      left: 100,
+      top: 120,
+      width: 90,
+      height: 18,
+      right: 190,
+      bottom: 138,
+      x: 100,
+      y: 120,
+      toJSON: () => ({}),
+    });
+    const selection = document.getSelection();
+    selection?.removeAllRanges();
+    selection?.addRange(range);
+    document.dispatchEvent(new Event("selectionchange"));
+    await nextTick();
+
+    expect(document.body.textContent).toContain("Define");
+    expect(document.body.textContent).toContain("Translate");
+    expect(document.body.textContent).not.toContain("Simple definition");
+
+    selection?.removeAllRanges();
+    wrapper.unmount();
   });
 });

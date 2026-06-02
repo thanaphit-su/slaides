@@ -28,6 +28,39 @@ async def test_create_session_returns_snapshot_with_code(client, auth_headers):
     assert body["audience_count"] == 0
 
 
+async def test_audience_snapshot_includes_interpret_quick_options(client, auth_headers):
+    settings = await client.patch(
+        "/api/v1/workspace",
+        headers=auth_headers,
+        json={
+            "interpret_quick_options": [
+                {"label": "Define", "instruction": "show a simple definition"},
+                {"label": "Why", "instruction": "explain why this matters"},
+            ],
+        },
+    )
+    assert settings.status_code == 200, settings.text
+    deck = await _create_deck(client, auth_headers)
+    session = (
+        await client.post("/api/v1/sessions", json={"deck_id": deck["id"]}, headers=auth_headers)
+    ).json()
+    guest = await client.post(
+        "/api/v1/auth/guest",
+        json={"code": session["code"], "email": "audience@example.com", "anonymous": True},
+    )
+    assert guest.status_code == 200, guest.text
+
+    snapshot = await client.get(
+        f"/api/v1/sessions/{session['id']}/audience",
+        headers={"Authorization": f"Bearer {guest.json()['token']}"},
+    )
+    assert snapshot.status_code == 200, snapshot.text
+    assert snapshot.json()["interpret_quick_options"] == [
+        {"label": "Define", "instruction": "show a simple definition"},
+        {"label": "Why", "instruction": "explain why this matters"},
+    ]
+
+
 async def test_create_session_rejects_second_active_real_session_until_ended(client, auth_headers):
     first_deck = await _create_deck(client, auth_headers)
     second_deck = await _create_deck(client, auth_headers)

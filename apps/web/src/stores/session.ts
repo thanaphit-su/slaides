@@ -5,6 +5,7 @@ import { sessionsApi } from "@/api/sessions";
 import { useAuthStore } from "@/stores/auth";
 import type {
   GuestJoinResponse,
+  InterpretQuickOption,
   OpenAnswer,
   PlacementState,
   SessionQuestion,
@@ -186,6 +187,11 @@ export const useSessionStore = defineStore("session", () => {
 
   function seedPlacementStates(): void {
     hydratePlacementStates(snapshot.value?.placement_states || []);
+  }
+
+  function setInterpretQuickOptions(options: InterpretQuickOption[]): void {
+    if (!snapshot.value) return;
+    snapshot.value.interpret_quick_options = options;
   }
 
   async function loadHost(sessionId: string): Promise<void> {
@@ -660,6 +666,7 @@ export const useSessionStore = defineStore("session", () => {
     goToLiveSlide,
     loadHost,
     loadAudience,
+    setInterpretQuickOptions,
     connect,
     disconnect,
     advanceTo,

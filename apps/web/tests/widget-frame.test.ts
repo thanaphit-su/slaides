@@ -134,6 +134,62 @@ describe("WidgetFrame reactivity", () => {
     expect(srcdoc).not.toContain("preview.pick");
   });
 
+  it("bakes the widget selection bridge for non-thumbnail frames", () => {
+    const wrapper = mount(WidgetFrame, {
+      props: { widget: fakeWidget(), placementId: "p-1", bootProps: {}, role: "audience" },
+    });
+    const srcdoc = wrapper.find("iframe").attributes("srcdoc") || "";
+    expect(srcdoc).toContain("widget.selection");
+    expect(srcdoc).toContain("selectionchange");
+    expect(srcdoc).toContain("contextmenu");
+  });
+
+  it("does not bake the widget selection bridge for thumbnails", () => {
+    const wrapper = mount(WidgetFrame, {
+      props: { widget: fakeWidget(), placementId: "p-1", bootProps: {}, role: "thumbnail" },
+    });
+    const srcdoc = wrapper.find("iframe").attributes("srcdoc") || "";
+    expect(srcdoc).not.toContain("widget.selection");
+  });
+
+  it("emits iframe text selection using viewport coordinates", () => {
+    const wrapper = mount(WidgetFrame, {
+      props: { widget: fakeWidget(), placementId: "p-1", bootProps: {}, role: "audience" },
+    });
+    const iframe = wrapper.find("iframe").element as HTMLIFrameElement;
+    const fakeWin = {};
+    Object.defineProperty(iframe, "contentWindow", { configurable: true, value: fakeWin });
+    iframe.getBoundingClientRect = vi.fn(() => ({
+      left: 100,
+      top: 200,
+      width: 320,
+      height: 180,
+      right: 420,
+      bottom: 380,
+      x: 100,
+      y: 200,
+      toJSON: () => ({}),
+    }));
+
+    const ev = new MessageEvent("message", {
+      data: {
+        slaides: true,
+        type: "widget.selection",
+        payload: {
+          text: " selected widget text ",
+          rect: { left: 20, top: 30, width: 80, height: 16 },
+          contextMenu: true,
+        },
+      },
+    });
+    Object.defineProperty(ev, "source", { configurable: true, value: fakeWin });
+    window.dispatchEvent(ev);
+
+    expect(wrapper.emitted("selection")?.[0]).toEqual([
+      { x: 160, y: 230, text: "selected widget text", contextMenu: true },
+    ]);
+  });
+
   it("allows https: in the iframe CSP img-src so URL-driven widgets (Carousel) can load images", () => {
     const wrapper = mount(WidgetFrame, {
       props: { widget: fakeWidget(), placementId: "p-1", bootProps: {}, role: "audience" },

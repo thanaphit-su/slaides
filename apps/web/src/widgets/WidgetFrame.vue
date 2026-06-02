@@ -29,6 +29,7 @@ const props = withDefaults(
 
 const emit = defineEmits<{
   (e: "interaction", payload: { type: string; payload: Record<string, unknown> }): void;
+  (e: "selection", payload: { x: number; y: number; text: string; contextMenu?: boolean }): void;
 }>();
 
 interface WidgetBroadcastDetail {
@@ -198,6 +199,70 @@ function buildSrcdoc(w: Widget, boot: Record<string, unknown>, fill: boolean): s
   const themeStyle = buildThemeStyleBlock(hostTokens, { fill });
   const widgetCss = w.css ? `<style>\n${w.css}\n</style>` : "";
   const widgetJs = w.js ? `${open}\n${w.js}\n${close}` : "";
+  const selectionBridgeScript =
+    props.role !== "thumbnail"
+      ? `${open}
+(function(){
+  var lastText = "";
+  var timer = 0;
+  function readSelection(){
+    var sel = window.getSelection && window.getSelection();
+    if (!sel || sel.rangeCount === 0 || sel.isCollapsed) return null;
+    var text = String(sel.toString() || "").trim();
+    if (!text) return null;
+    var range = sel.getRangeAt(0);
+    var rect = range.getBoundingClientRect();
+    if ((!rect.width && !rect.height) && range.getClientRects) {
+      var rects = range.getClientRects();
+      rect = rects && rects.length ? rects[0] : rect;
+    }
+    if (!rect || (!rect.width && !rect.height)) return null;
+    return {
+      text: text.slice(0, 4000),
+      rect: {
+        left: rect.left,
+        top: rect.top,
+        width: rect.width,
+        height: rect.height
+      }
+    };
+  }
+  function postSelection(contextMenu){
+    var selected = readSelection();
+    if (!selected) {
+      if (lastText) {
+        lastText = "";
+        parent.postMessage({ slaides: true, type: "widget.selection.clear", payload: {} }, "*");
+      }
+      return false;
+    }
+    lastText = selected.text;
+    parent.postMessage({
+      slaides: true,
+      type: "widget.selection",
+      payload: {
+        text: selected.text,
+        rect: selected.rect,
+        contextMenu: !!contextMenu
+      }
+    }, "*");
+    return true;
+  }
+  function schedule(){
+    clearTimeout(timer);
+    timer = setTimeout(function(){ postSelection(false); }, 0);
+  }
+  document.addEventListener("selectionchange", schedule);
+  document.addEventListener("pointerup", schedule, true);
+  document.addEventListener("keyup", schedule, true);
+  document.addEventListener("contextmenu", function(e){
+    if (!postSelection(true)) return;
+    e.preventDefault();
+    e.stopPropagation();
+  }, true);
+})();
+${close}`
+      : "";
   // Preview-tab inspector. Listens for `preview.inspect` from the host and,
   // when armed, intercepts the next click to send a `preview.pick` message
   // up with a CSS-ish selector + visible text snippet. Not loaded outside
@@ -267,6 +332,7 @@ ${close}`
 ${widgetCss}
 ${open}window.__slaides_boot = ${bootJSON};${close}
 ${open}${WIDGET_BRIDGE_SOURCE}${close}
+${selectionBridgeScript}
 ${inspectorScript}
 </head>
 <body>
@@ -280,6 +346,29 @@ function send(type: string, payload: Record<string, unknown>) {
     { slaides: true, type, payload: cloneForPostMessage(payload) },
     "*",
   );
+}
+
+function emitSelectionFromIframe(payload: Record<string, unknown>, contextMenu = false) {
+  const iframe = iframeEl.value;
+  if (!iframe) return;
+  const text = typeof payload.text === "string" ? payload.text.trim() : "";
+  if (!text) return;
+  const rect = payload.rect && typeof payload.rect === "object"
+    ? payload.rect as { left?: unknown; top?: unknown; width?: unknown; height?: unknown }
+    : null;
+  if (!rect) return;
+  const left = Number(rect.left);
+  const top = Number(rect.top);
+  const width = Number(rect.width);
+  const height = Number(rect.height);
+  if (![left, top, width, height].every(Number.isFinite)) return;
+  const frameRect = iframe.getBoundingClientRect();
+  emit("selection", {
+    x: frameRect.left + left + width / 2,
+    y: frameRect.top + top,
+    text,
+    contextMenu,
+  });
 }
 
 function onMessage(ev: MessageEvent) {
@@ -314,6 +403,14 @@ function onMessage(ev: MessageEvent) {
   }
   const type = typeof data.type === "string" ? data.type : "";
   if (!type) return;
+  if (type === "widget.selection") {
+    emitSelectionFromIframe(data.payload || {}, !!data.payload?.contextMenu);
+    return;
+  }
+  if (type === "widget.selection.clear") {
+    emit("selection", { x: 0, y: 0, text: "" });
+    return;
+  }
   if (type === "state.set") {
     // Persist per-viewer scratch state so it survives an iframe remount. The
     // widget already updated its own in-iframe copy; we mirror it to host

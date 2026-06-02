@@ -23,6 +23,11 @@ export interface RenderOptions {
     placement: SlideWidgetEmbed,
     event: { type: string; payload: Record<string, unknown> },
   ) => void;
+  /** Fired when text is selected inside a mounted widget iframe. */
+  onWidgetSelection?: (
+    placement: SlideWidgetEmbed,
+    event: { x: number; y: number; text: string; contextMenu?: boolean },
+  ) => void;
   /** Role passed into the iframe boot (instructor / audience / preview). */
   widgetRole?: "instructor" | "audience" | "preview";
   /** Audience identity (display_name + anon flag) baked into the iframe
@@ -595,6 +600,10 @@ function renderWidgetBlock(b: Block, key: number, opts: RenderOptions, fill = fa
       onInteraction: opts.onWidgetEvent
         ? (event: { type: string; payload: Record<string, unknown> }) =>
             opts.onWidgetEvent!(placement, event)
+        : undefined,
+      onSelection: opts.onWidgetSelection
+        ? (event: { x: number; y: number; text: string; contextMenu?: boolean }) =>
+            opts.onWidgetSelection!(placement, event)
         : undefined,
     });
   } else {
