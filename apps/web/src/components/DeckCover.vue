@@ -103,9 +103,6 @@ const preview = computed(() => {
       >
         {{ line }}
       </text>
-      <circle cx="280" cy="40" r="3" fill="#c2410c" />
-      <circle cx="296" cy="64" r="2" fill="#117a45" />
-      <circle cx="270" cy="80" r="2.5" fill="#be1d4a" />
     </svg>
     <svg
       v-else-if="props.variant === 'fieldnotes' || !props.variant"
@@ -118,9 +115,6 @@ const preview = computed(() => {
       <text x="22" y="112" font-family="Newsreader, serif" font-size="22" fill="#1f3a8a" font-style="italic">brain you can build.</text>
       <line x1="22" y1="130" x2="48" y2="130" stroke="#0b0d10" stroke-width="1.2" />
       <text x="22" y="148" font-family="Inter, sans-serif" font-size="9" fill="#4b525b">15 MIN · 4 INTERACTIVES</text>
-      <circle cx="280" cy="40" r="3" fill="#c2410c" />
-      <circle cx="296" cy="64" r="2" fill="#117a45" />
-      <circle cx="270" cy="80" r="2.5" fill="#be1d4a" />
     </svg>
     <svg
       v-else-if="props.variant === 'onboarding'"
