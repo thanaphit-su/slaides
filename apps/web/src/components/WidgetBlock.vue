@@ -87,8 +87,14 @@ function onRemoveClick() {
       :fill="!!fill"
       :min-height="fill ? 560 : 80"
     />
+    <div v-else-if="placement" class="widget-block-skeleton" aria-hidden="true">
+      <div class="widget-block-skeleton-head" />
+      <div class="widget-block-skeleton-line widget-block-skeleton-line-main" />
+      <div class="widget-block-skeleton-line" />
+      <div class="widget-block-skeleton-action" />
+    </div>
     <div v-else class="widget-block-stub">
-      {{ placement ? "Loading widget…" : `WIDGET · #${placementId}` }}
+      {{ `WIDGET · #${placementId}` }}
     </div>
   </div>
 </template>
@@ -165,5 +171,49 @@ function onRemoveClick() {
   color: var(--ink-soft);
   letter-spacing: 0.04em;
   text-align: center;
+}
+
+.widget-block-skeleton {
+  position: relative;
+  min-height: 112px;
+  padding: 20px;
+  border: 1px solid var(--rule);
+  border-radius: var(--r-md);
+  background: var(--paper);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.55);
+  overflow: hidden;
+}
+
+.widget-block-skeleton-head,
+.widget-block-skeleton-line,
+.widget-block-skeleton-action {
+  position: relative;
+  z-index: 1;
+  display: block;
+  border-radius: var(--r-sm);
+  background: color-mix(in srgb, var(--ink-soft) 11%, var(--paper));
+}
+
+.widget-block-skeleton-head {
+  width: 76px;
+  height: 8px;
+  margin-bottom: 20px;
+}
+
+.widget-block-skeleton-line {
+  width: 52%;
+  height: 10px;
+  margin-top: 10px;
+}
+
+.widget-block-skeleton-line-main {
+  width: 68%;
+  height: 16px;
+}
+
+.widget-block-skeleton-action {
+  width: 116px;
+  height: 28px;
+  margin-top: 20px;
 }
 </style>

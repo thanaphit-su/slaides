@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
+import { computed, onBeforeUnmount, onMounted, ref, shallowRef, watch, type CSSProperties } from "vue";
 import { llmApi } from "@/api/llm";
 import { useSessionStore } from "@/stores/session";
 import { WIDGET_BRIDGE_SOURCE } from "./bridge";
@@ -39,7 +39,9 @@ interface WidgetBroadcastDetail {
 }
 
 const iframeEl = ref<HTMLIFrameElement | null>(null);
-const measured = ref<number>(props.minHeight);
+const measured = shallowRef<number>(props.minHeight);
+const frameReady = shallowRef(props.role === "thumbnail");
+let revealTimer = 0;
 
 // `window.__slaides_preview` is set by Audience.vue / Presenter.vue right after
 // the preview-iframe handshake. When true, we bake a click-inspector script
@@ -160,6 +162,33 @@ const srcdoc = computed(() =>
     props.fill,
   ),
 );
+
+const showSkeleton = computed(() => props.role !== "thumbnail" && !frameReady.value);
+const iframeStyle = computed<CSSProperties>(() => {
+  const base: CSSProperties = {
+    width: "100%",
+    border: "0",
+    borderRadius: "0",
+    background: "transparent",
+    display: "block",
+    overflow: "hidden",
+  };
+  if (props.role === "thumbnail") return base;
+  if (props.fill) {
+    return {
+      ...base,
+      height: `${props.minHeight}px`,
+      opacity: showSkeleton.value ? 0 : 1,
+      transition: "opacity .18s ease",
+    };
+  }
+  return {
+    ...base,
+    height: `${measured.value}px`,
+    opacity: showSkeleton.value ? 0 : 1,
+    transition: "height .15s ease, opacity .18s ease",
+  };
+});
 
 function buildSrcdoc(w: Widget, boot: Record<string, unknown>, fill: boolean): string {
   // NOTE: closing script tags are split into "</scr" + "ipt>" so this Vue SFC
@@ -480,6 +509,11 @@ function onBroadcast(ev: Event) {
 }
 
 function onIframeLoad() {
+  window.clearTimeout(revealTimer);
+  revealTimer = window.setTimeout(() => {
+    frameReady.value = true;
+  }, 220);
+
   // Replay the persisted Loud-widget state from the session store so the
   // freshly-loaded iframe boots with whatever the host already knew about
   // this placement. Quiet widgets have no placement state and skip silently.
@@ -505,6 +539,7 @@ onMounted(() => {
   window.addEventListener("slaides:widget-broadcast", onBroadcast as EventListener);
 });
 onBeforeUnmount(() => {
+  window.clearTimeout(revealTimer);
   window.removeEventListener("message", onMessage);
   window.removeEventListener("slaides:widget-broadcast", onBroadcast as EventListener);
   for (const controller of inflightLlm.values()) controller.abort();
@@ -517,43 +552,93 @@ watch(
   (next) => send("props.update", { props: next || {} }),
   { deep: true },
 );
+
+watch(srcdoc, () => {
+  window.clearTimeout(revealTimer);
+  frameReady.value = props.role === "thumbnail";
+});
 </script>
 
 <template>
-  <iframe
-    ref="iframeEl"
-    :srcdoc="srcdoc"
-    :title="`Widget · ${widget.kind}`"
-    sandbox="allow-scripts allow-forms"
-    scrolling="no"
-    @load="onIframeLoad"
-    :style="role === 'thumbnail'
-      ? {
-          border: '0',
-          borderRadius: '0',
-          background: 'transparent',
-          display: 'block',
-          overflow: 'hidden',
-        }
-      : fill
-      ? {
-          width: '100%',
-          height: minHeight + 'px',
-          border: '0',
-          borderRadius: '0',
-          background: 'transparent',
-          display: 'block',
-          overflow: 'hidden',
-        }
-      : {
-          width: '100%',
-          height: measured + 'px',
-          border: '0',
-          borderRadius: '0',
-          background: 'transparent',
-          display: 'block',
-          transition: 'height .15s ease',
-          overflow: 'hidden',
-        }"
-  />
+  <div class="widget-frame-shell">
+    <iframe
+      ref="iframeEl"
+      class="widget-frame"
+      :srcdoc="srcdoc"
+      :title="`Widget · ${widget.kind}`"
+      sandbox="allow-scripts allow-forms"
+      scrolling="no"
+      @load="onIframeLoad"
+      :style="iframeStyle"
+    />
+    <div
+      v-if="role !== 'thumbnail'"
+      class="widget-frame-skeleton"
+      :class="{ 'is-hidden': !showSkeleton }"
+      aria-hidden="true"
+    >
+      <div class="widget-frame-skeleton-head" />
+      <div class="widget-frame-skeleton-line widget-frame-skeleton-line-main" />
+      <div class="widget-frame-skeleton-line" />
+      <div class="widget-frame-skeleton-action" />
+    </div>
+  </div>
 </template>
+
+<style scoped>
+.widget-frame-shell {
+  position: relative;
+}
+
+.widget-frame-skeleton {
+  position: absolute;
+  inset: 0;
+  min-height: 80px;
+  padding: 20px;
+  border: 1px solid var(--rule);
+  border-radius: var(--r-md);
+  background: var(--paper);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.55);
+  overflow: hidden;
+  pointer-events: none;
+  opacity: 1;
+  transition: opacity .18s ease;
+}
+
+.widget-frame-skeleton.is-hidden {
+  opacity: 0;
+}
+
+.widget-frame-skeleton-head,
+.widget-frame-skeleton-line,
+.widget-frame-skeleton-action {
+  position: relative;
+  z-index: 1;
+  display: block;
+  border-radius: var(--r-sm);
+  background: color-mix(in srgb, var(--ink-soft) 11%, var(--paper));
+}
+
+.widget-frame-skeleton-head {
+  width: 76px;
+  height: 8px;
+  margin-bottom: 20px;
+}
+
+.widget-frame-skeleton-line {
+  width: 52%;
+  height: 10px;
+  margin-top: 10px;
+}
+
+.widget-frame-skeleton-line-main {
+  width: 68%;
+  height: 16px;
+}
+
+.widget-frame-skeleton-action {
+  width: 116px;
+  height: 28px;
+  margin-top: 20px;
+}
+</style>

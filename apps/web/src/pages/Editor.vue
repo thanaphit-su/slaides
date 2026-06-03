@@ -901,7 +901,7 @@ function onDeleteSlideById(id: string) {
 
           <div :style="{ maxWidth: '920px', margin: '0 auto', padding: '56px 64px 96px' }">
             <template v-if="activeSlide">
-              <div class="fade-in" :key="activeSlide.id">
+              <div :class="{ 'fade-in': !activeSlide.widgets.length }" :key="activeSlide.id">
                 <div class="editor-surface-header">
                   <div class="t-kicker">
                     {{ derivedKicker }}
