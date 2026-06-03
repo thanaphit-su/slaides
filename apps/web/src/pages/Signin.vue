@@ -282,8 +282,11 @@ async function joinSessionWithCurrentIdentity() {
               color: 'var(--ink-soft)',
             }"
           >
-            Seed account:
-            <code :style="{ fontFamily: 'var(--mono)' }">you@studio.press / slaides</code>
+            {{
+              instructorMode === "signin"
+                ? "Use your instructor account to continue."
+                : "New instructor accounts may require approval before workspace access."
+            }}
           </div>
         </form>
 
