@@ -30,8 +30,24 @@ const endingBusy = ref(false);
 
 const inPreviewIframe = ref(false);
 
+// Wall-clock tick driving the elapsed-time counter. Updated once a second; the
+// formatting (00:00:00) is derived in the `elapsed` computed from the session's
+// started_at so a reconnect/snapshot reload keeps the count correct.
+const now = ref(Date.now());
+let clockTimer: number | undefined;
+
+const elapsed = computed(() => {
+  const startedAt = session.snapshot?.started_at;
+  const start = startedAt ? new Date(startedAt).getTime() : NaN;
+  if (!Number.isFinite(start)) return "00:00:00";
+  const totalSec = Math.max(0, Math.floor((now.value - start) / 1000));
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return `${pad(Math.floor(totalSec / 3600))}:${pad(Math.floor((totalSec % 3600) / 60))}:${pad(totalSec % 60)}`;
+});
+
 onMounted(async () => {
   window.addEventListener("keydown", onPresenterKeydown);
+  clockTimer = window.setInterval(() => (now.value = Date.now()), 1000);
   // Preview-iframe handshake: when embedded by the editor's preview tab the
   // parent posts inspector state; we also use this to know that we should
   // forward slide changes back up so the chat panel stays in sync.
@@ -63,6 +79,7 @@ watch(
 
 onBeforeUnmount(() => {
   window.removeEventListener("keydown", onPresenterKeydown);
+  if (clockTimer) window.clearInterval(clockTimer);
   session.disconnect();
 });
 
@@ -310,6 +327,23 @@ watch(
         </span>
       </div>
       <div :style="{ display: 'flex', alignItems: 'center', gap: '10px' }">
+        <span
+          class="t-mono"
+          :style="{
+            display: 'inline-flex',
+            alignItems: 'center',
+            gap: '5px',
+            padding: '4px 10px',
+            border: '1px solid var(--rule)',
+            borderRadius: '999px',
+            fontSize: '12px',
+            fontVariantNumeric: 'tabular-nums',
+          }"
+          title="Elapsed time"
+        >
+          <Icon name="clock" :size="14" />
+          {{ elapsed }}
+        </span>
         <span
           :style="{
             display: 'inline-flex',
