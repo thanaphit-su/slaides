@@ -874,6 +874,9 @@ async def test_keeping_widget_placeholder_in_markdown_leaves_the_placement(clien
         headers=auth_headers,
     )
     assert edited.status_code == 200
+    returned_slide = edited.json()["slides"][0]
+    assert any(p["placement_id"] == "poll-keep1234" for p in returned_slide["widgets"])
+
     # Placement survives — re-fetch the deck and confirm the slide widgets list
     # still has the placement_id.
     deck_after = (await client.get(f"/api/v1/decks/{deck['id']}", headers=auth_headers)).json()

@@ -41,12 +41,7 @@ async def _deck_out(session: AsyncSession, deck: Deck) -> DeckOut:
     await session.refresh(deck)
     slides = await service.list_slides(session, deck.id)
     sections = await service.list_sections(session, deck.id)
-    placements = await service.load_widget_placements(session, [s.id for s in slides])
-    slide_outs = []
-    for s in slides:
-        out = SlideOut.model_validate(s)
-        out.widgets = [SlideWidgetEmbed(**p) for p in placements.get(s.id, [])]
-        slide_outs.append(out)
+    slide_outs = await _slides_out_with_widgets(session, slides)
     return DeckOut(
         id=deck.id,
         title=deck.title,
@@ -58,6 +53,16 @@ async def _deck_out(session: AsyncSession, deck: Deck) -> DeckOut:
         sections=[SectionOut.model_validate(s) for s in sections],
         slides=slide_outs,
     )
+
+
+async def _slides_out_with_widgets(session: AsyncSession, slides: list[Slide]) -> list[SlideOut]:
+    placements = await service.load_widget_placements(session, [s.id for s in slides])
+    slide_outs = []
+    for s in slides:
+        out = SlideOut.model_validate(s)
+        out.widgets = [SlideWidgetEmbed(**p) for p in placements.get(s.id, [])]
+        slide_outs.append(out)
+    return slide_outs
 
 
 @router.get("", response_model=list[DeckListItem])
@@ -242,7 +247,7 @@ async def update_slide(
     if slide is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="slide not found")
     affected = await service.replace_slide_markdown(session, slide, body.markdown, body.kicker)
-    return SlideMutationResult(slides=[SlideOut.model_validate(s) for s in affected])
+    return SlideMutationResult(slides=await _slides_out_with_widgets(session, affected))
 
 
 async def _load_section(
@@ -335,13 +340,7 @@ async def reorder_slides(
         )
     except ValueError as exc:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
-    placements = await service.load_widget_placements(session, [s.id for s in slides])
-    out: list[SlideOut] = []
-    for s in slides:
-        item = SlideOut.model_validate(s)
-        item.widgets = [SlideWidgetEmbed(**p) for p in placements.get(s.id, [])]
-        out.append(item)
-    return out
+    return await _slides_out_with_widgets(session, slides)
 
 
 @router.delete("/{deck_id}/slides/{slide_id}", status_code=status.HTTP_204_NO_CONTENT)
