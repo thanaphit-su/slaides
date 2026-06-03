@@ -229,7 +229,7 @@ async function joinSessionWithCurrentIdentity() {
             <input
               class="input"
               type="email"
-              placeholder="you@studio.press"
+              placeholder="name@company.com"
               v-model="email"
               required
               autofocus
