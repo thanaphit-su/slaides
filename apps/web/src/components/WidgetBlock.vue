@@ -87,11 +87,12 @@ function onRemoveClick() {
       :fill="!!fill"
       :min-height="fill ? 560 : 80"
     />
-    <div v-else-if="placement" class="widget-block-skeleton" aria-hidden="true">
-      <div class="widget-block-skeleton-head" />
-      <div class="widget-block-skeleton-line widget-block-skeleton-line-main" />
-      <div class="widget-block-skeleton-line" />
-      <div class="widget-block-skeleton-action" />
+    <div v-else-if="placement" class="widget-block-skeleton" role="status" aria-live="polite">
+      <span class="widget-block-loading-text">Loading widget</span>
+      <div class="widget-block-skeleton-head" aria-hidden="true" />
+      <div class="widget-block-skeleton-line widget-block-skeleton-line-main" aria-hidden="true" />
+      <div class="widget-block-skeleton-line" aria-hidden="true" />
+      <div class="widget-block-skeleton-action" aria-hidden="true" />
     </div>
     <div v-else class="widget-block-stub">
       {{ `WIDGET · #${placementId}` }}
@@ -182,6 +183,18 @@ function onRemoveClick() {
   background: var(--paper);
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.55);
   overflow: hidden;
+}
+
+.widget-block-loading-text {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
 }
 
 .widget-block-skeleton-head,

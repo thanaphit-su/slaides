@@ -8,7 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..auth.deps import current_user
 from ..db.deps import db_session
-from ..db.models import AppUser, Deck, Section, Slide
+from ..db.models import AppUser, Deck, Section, Slide, SlideWidget, Widget, WidgetRevision
 from . import package, service
 from .schemas import (
     DeckCreate,
@@ -369,15 +369,112 @@ async def export_deck(
     deck = await _load_deck(session, user, deck_id)
     sections = await service.list_sections(session, deck.id)
     slides = await service.list_slides(session, deck.id)
+    section_key_by_id = {s.id: f"section-{i}" for i, s in enumerate(sections)}
+    slide_key_by_id = {s.id: f"slide-{i}" for i, s in enumerate(slides)}
+    placement_rows = (
+        await session.execute(
+            select(SlideWidget, Widget, WidgetRevision)
+            .join(Widget, Widget.id == SlideWidget.widget_id)
+            .outerjoin(WidgetRevision, WidgetRevision.id == SlideWidget.revision_id)
+            .where(SlideWidget.slide_id.in_([s.id for s in slides]))
+            .order_by(SlideWidget.position)
+        )
+    ).all()
+    widget_by_id: dict[uuid.UUID, Widget] = {}
+    revision_by_id: dict[uuid.UUID, WidgetRevision] = {}
+    for link, widget, revision in placement_rows:
+        widget_by_id[widget.id] = widget
+        if revision is not None:
+            revision_by_id[revision.id] = revision
+
+    current_revision_ids = {
+        w.current_revision_id
+        for w in widget_by_id.values()
+        if w.current_revision_id is not None
+    }
+    missing_current_revision_ids = current_revision_ids - set(revision_by_id)
+    if missing_current_revision_ids:
+        current_revisions = (
+            await session.execute(
+                select(WidgetRevision).where(
+                    WidgetRevision.id.in_(missing_current_revision_ids)
+                )
+            )
+        ).scalars()
+        for revision in current_revisions:
+            revision_by_id[revision.id] = revision
+
+    widget_key_by_id = {widget_id: f"widget-{i}" for i, widget_id in enumerate(widget_by_id)}
+    revision_key_by_id = {
+        revision_id: f"revision-{i}" for i, revision_id in enumerate(revision_by_id)
+    }
     packed = package.Packaged(
         title=deck.title,
         subtitle=deck.subtitle,
         manifest=deck.manifest or {},
-        sections=[package.PackagedSection(title=s.title, position=s.position) for s in sections],
+        sections=[
+            package.PackagedSection(
+                key=section_key_by_id[s.id],
+                title=s.title,
+                position=s.position,
+            )
+            for s in sections
+        ],
         slides=[
-            package.PackagedSlide(position=s.position, kicker=s.kicker, markdown=s.markdown)
+            package.PackagedSlide(
+                key=slide_key_by_id[s.id],
+                position=s.position,
+                section_key=section_key_by_id.get(s.section_id) if s.section_id else None,
+                kicker=s.kicker,
+                markdown=s.markdown,
+            )
             for s in slides
         ],
+        widgets=[
+            package.PackagedWidget(
+                key=widget_key_by_id[w.id],
+                name=w.name,
+                kind=w.kind,
+                description=w.description,
+                tags=list(w.tags or []),
+                version=w.version,
+                derived_from_key=None,
+                current_revision_key=(
+                    revision_key_by_id.get(w.current_revision_id)
+                    if w.current_revision_id
+                    else None
+                ),
+            )
+            for w in widget_by_id.values()
+        ],
+        widget_revisions=[
+            package.PackagedWidgetRevision(
+                key=revision_key_by_id[r.id],
+                widget_key=widget_key_by_id[r.widget_id],
+                version_number=r.version_number,
+                html=r.html or "",
+                js=r.js,
+                css=r.css,
+                props_schema=r.props_schema or {},
+                example_props=r.example_props or {},
+                behavior=r.behavior or {"kind": "quiet"},
+                ai_spec=r.ai_spec or {},
+                created_reason=r.created_reason,
+            )
+            for r in revision_by_id.values()
+        ],
+        placements=[
+            package.PackagedPlacement(
+                slide_key=slide_key_by_id[link.slide_id],
+                placement_id=link.placement_id,
+                widget_key=widget_key_by_id[link.widget_id],
+                revision_key=revision_key_by_id.get(link.revision_id) if link.revision_id else None,
+                props=link.props or {},
+                position=link.position,
+            )
+            for link, _widget, _revision in placement_rows
+        ],
+        excluded={"widget_ai_threads": True},
     )
     body = package.pack(packed)
     safe_title = (deck.title or "deck").replace("/", "-")
@@ -411,20 +508,94 @@ async def import_deck(
     )
     session.add(deck)
     await session.flush()
-    section_objs: list[Section] = []
-    for s in packed.sections:
-        section_objs.append(Section(deck_id=deck.id, title=s.title, position=s.position))
-    session.add_all(section_objs)
+    section_by_key: dict[str, Section] = {}
+    for i, s in enumerate(packed.sections):
+        key = s.key or f"section-{i}"
+        section = Section(deck_id=deck.id, title=s.title, position=s.position)
+        section_by_key[key] = section
+        session.add(section)
     await session.flush()
-    default_section = section_objs[0].id if section_objs else None
-    for s in packed.slides:
+    slide_by_key: dict[str, Slide] = {}
+    for i, s in enumerate(packed.slides):
+        key = s.key or f"slide-{i}"
+        slide = Slide(
+            deck_id=deck.id,
+            section_id=section_by_key[s.section_key].id if s.section_key in section_by_key else None,
+            position=s.position,
+            kicker=s.kicker,
+            markdown=s.markdown,
+        )
+        slide_by_key[key] = slide
+        session.add(slide)
+    await session.flush()
+
+    widget_by_key: dict[str, Widget] = {}
+    for w in packed.widgets or []:
+        widget = Widget(
+            deck_id=deck.id,
+            derived_from_id=None,
+            name=w.name,
+            kind=w.kind,
+            description=w.description,
+            html="",
+            js=None,
+            css=None,
+            props_schema={},
+            tags=list(w.tags or []),
+            version=w.version,
+            behavior={"kind": "quiet"},
+        )
+        widget_by_key[w.key] = widget
+        session.add(widget)
+    await session.flush()
+
+    revision_by_key: dict[str, WidgetRevision] = {}
+    for r in packed.widget_revisions or []:
+        widget = widget_by_key.get(r.widget_key)
+        if widget is None:
+            continue
+        revision = WidgetRevision(
+            widget_id=widget.id,
+            version_number=r.version_number,
+            html=r.html or "",
+            js=r.js,
+            css=r.css,
+            props_schema=r.props_schema or {},
+            example_props=r.example_props or {},
+            behavior=r.behavior or {"kind": "quiet"},
+            ai_spec=r.ai_spec or {},
+            created_reason=r.created_reason or "import",
+        )
+        revision_by_key[r.key] = revision
+        session.add(revision)
+    await session.flush()
+
+    for w in packed.widgets or []:
+        widget = widget_by_key[w.key]
+        revision = revision_by_key.get(w.current_revision_key or "")
+        if revision is not None:
+            widget.current_revision_id = revision.id
+            widget.html = revision.html
+            widget.js = revision.js
+            widget.css = revision.css
+            widget.props_schema = revision.props_schema
+            widget.behavior = revision.behavior
+    await session.flush()
+
+    for p in packed.placements or []:
+        slide = slide_by_key.get(p.slide_key)
+        widget = widget_by_key.get(p.widget_key)
+        if slide is None or widget is None:
+            continue
+        revision = revision_by_key.get(p.revision_key or "")
         session.add(
-            Slide(
-                deck_id=deck.id,
-                section_id=default_section,
-                position=s.position,
-                kicker=s.kicker,
-                markdown=s.markdown,
+            SlideWidget(
+                slide_id=slide.id,
+                placement_id=p.placement_id,
+                widget_id=widget.id,
+                revision_id=revision.id if revision is not None else None,
+                props=p.props or {},
+                position=p.position,
             )
         )
     await session.flush()

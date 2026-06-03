@@ -825,7 +825,11 @@ function onDeleteSlideById(id: string) {
         >
           <Icon name="eye" :size="14" /> Preview
         </button>
-        <button class="btn btn-sm" @click="onExport">
+        <button
+          class="btn btn-sm"
+          @click="onExport"
+          title="Exports slides, sections, widgets, and props. AI chat history is not included."
+        >
           <Icon name="download" :size="14" /> Export
         </button>
         <button class="btn btn-ghost btn-sm" @click="settingsOpen = true">

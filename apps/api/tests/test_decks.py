@@ -247,6 +247,227 @@ async def test_export_then_import_round_trip(client, auth_headers):
     assert new_deck["slides"][0]["kicker"] == "Intro"
 
 
+async def test_package_v02_preserves_section_and_widget_metadata():
+    from slaides.decks import package
+
+    packed = package.Packaged(
+        title="Rich",
+        subtitle=None,
+        manifest={},
+        sections=[package.PackagedSection(key="section-a", title="A", position=0)],
+        slides=[
+            package.PackagedSlide(
+                key="slide-a",
+                position=0,
+                section_key="section-a",
+                kicker="Intro",
+                markdown="# Hello\n\n{{widget:poll-1}}\n",
+            )
+        ],
+        widgets=[
+            package.PackagedWidget(
+                key="widget-a",
+                name="Poll",
+                kind="poll",
+                description=None,
+                tags=[],
+                version="v0.1",
+                derived_from_key=None,
+                current_revision_key="revision-a",
+            )
+        ],
+        widget_revisions=[
+            package.PackagedWidgetRevision(
+                key="revision-a",
+                widget_key="widget-a",
+                version_number=1,
+                html="<section>Poll</section>",
+                js=None,
+                css=None,
+                props_schema={"properties": {"question": {"type": "string"}}},
+                example_props={"question": "Example"},
+                behavior={"kind": "quiet"},
+                ai_spec={"prompt": "make poll"},
+                created_reason="create",
+            )
+        ],
+        placements=[
+            package.PackagedPlacement(
+                slide_key="slide-a",
+                placement_id="poll-1",
+                widget_key="widget-a",
+                revision_key="revision-a",
+                props={"question": "Ready?"},
+                position=0,
+            )
+        ],
+        excluded={"widget_ai_threads": True},
+    )
+
+    unpacked = package.unpack(package.pack(packed))
+
+    assert unpacked.sections[0].key == "section-a"
+    assert unpacked.slides[0].section_key == "section-a"
+    assert unpacked.widgets[0].key == "widget-a"
+    assert unpacked.widget_revisions[0].props_schema["properties"]["question"]["type"] == "string"
+    assert unpacked.placements[0].props == {"question": "Ready?"}
+    assert unpacked.excluded == {"widget_ai_threads": True}
+
+
+async def test_export_import_preserves_slide_section_membership(client, auth_headers):
+    create = await client.post("/api/v1/decks", json={"title": "Sectioned"}, headers=auth_headers)
+    deck = create.json()
+    deck_id = deck["id"]
+    first_section = deck["sections"][0]
+    first_slide = deck["slides"][0]
+
+    second_section = (
+        await client.post(
+            f"/api/v1/decks/{deck_id}/sections",
+            json={"title": "Second"},
+            headers=auth_headers,
+        )
+    ).json()
+    second_slide = (
+        await client.post(
+            f"/api/v1/decks/{deck_id}/slides",
+            json={"position": 1, "markdown": "# In second\n", "section_id": second_section["id"]},
+            headers=auth_headers,
+        )
+    ).json()
+
+    export = await client.post(f"/api/v1/decks/{deck_id}/export", headers=auth_headers)
+    imported = await client.post(
+        "/api/v1/decks/import",
+        files={"file": ("sectioned.slaides", export.content, "application/zip")},
+        headers=auth_headers,
+    )
+
+    body = imported.json()
+    sections_by_title = {s["title"]: s["id"] for s in body["sections"]}
+    slides_by_heading = {s["markdown"].splitlines()[0]: s for s in body["slides"]}
+
+    assert slides_by_heading[first_slide["markdown"].splitlines()[0]]["section_id"] == sections_by_title[first_section["title"]]
+    assert slides_by_heading[second_slide["markdown"].splitlines()[0]]["section_id"] == sections_by_title["Second"]
+
+
+async def test_export_import_preserves_widget_props_and_revision(client, auth_headers):
+    create = await client.post("/api/v1/decks", json={"title": "Widget deck"}, headers=auth_headers)
+    deck = create.json()
+    deck_id = deck["id"]
+    slide_id = deck["slides"][0]["id"]
+
+    widget = (
+        await client.post(
+            f"/api/v1/decks/{deck_id}/widgets",
+            json={
+                "name": "Pulse",
+                "kind": "pulse",
+                "description": "A check-in",
+                "html": "<section id='pulse'></section>",
+                "js": "window.slaides && window.slaides.emit('ready', {})",
+                "css": "#pulse { color: red; }",
+                "props_schema": {"properties": {"question": {"type": "string"}}},
+                "example_props": {"question": "Example?"},
+                "behavior": {"kind": "quiet"},
+                "ai_spec": {"prompt": "make it"},
+                "tags": ["check"],
+            },
+            headers=auth_headers,
+        )
+    ).json()
+
+    attach = await client.post(
+        f"/api/v1/decks/{deck_id}/slides/{slide_id}/widgets",
+        json={
+            "placement_id": "pulse-abcd1234",
+            "widget_id": widget["id"],
+            "props": {"question": "Ready?"},
+        },
+        headers=auth_headers,
+    )
+    assert attach.status_code == 201, attach.text
+
+    export = await client.post(f"/api/v1/decks/{deck_id}/export", headers=auth_headers)
+    imported = await client.post(
+        "/api/v1/decks/import",
+        files={"file": ("widget.slaides", export.content, "application/zip")},
+        headers=auth_headers,
+    )
+
+    body = imported.json()
+    imported_slide = body["slides"][0]
+    assert "{{widget:pulse-abcd1234}}" in imported_slide["markdown"]
+    assert len(imported_slide["widgets"]) == 1
+    placement = imported_slide["widgets"][0]
+    assert placement["placement_id"] == "pulse-abcd1234"
+    assert placement["props"] == {"question": "Ready?"}
+    assert placement["widget_id"] != widget["id"]
+    assert placement["revision"]["html"] == "<section id='pulse'></section>"
+    assert placement["revision"]["props_schema"]["properties"]["question"]["type"] == "string"
+
+
+async def test_deck_export_import_excludes_widget_ai_thread_history(client, auth_headers):
+    create = await client.post("/api/v1/decks", json={"title": "Private chat"}, headers=auth_headers)
+    deck = create.json()
+    deck_id = deck["id"]
+    slide_id = deck["slides"][0]["id"]
+
+    widget = (
+        await client.post(
+            f"/api/v1/decks/{deck_id}/widgets",
+            json={
+                "name": "Chatty",
+                "kind": "chatty",
+                "html": "<section></section>",
+                "props_schema": {},
+                "example_props": {},
+                "behavior": {"kind": "quiet"},
+                "ai_spec": {},
+                "tags": [],
+            },
+            headers=auth_headers,
+        )
+    ).json()
+
+    attach = await client.post(
+        f"/api/v1/decks/{deck_id}/slides/{slide_id}/widgets",
+        json={"placement_id": "chatty-abcd1234", "widget_id": widget["id"], "props": {}},
+        headers=auth_headers,
+    )
+    assert attach.status_code == 201, attach.text
+
+    thread = (
+        await client.post(
+            f"/api/v1/widgets/{widget['id']}/ai-thread",
+            json={"title": "Private", "compact_summary": {"secret": "summary"}},
+            headers=auth_headers,
+        )
+    ).json()
+    await client.post(
+        f"/api/v1/widgets/{widget['id']}/ai-thread/{thread['id']}/messages",
+        json={
+            "role": "user",
+            "message_type": "text",
+            "content": {"text": "private prompt"},
+            "revision_id": widget["current_revision_id"],
+        },
+        headers=auth_headers,
+    )
+
+    export = await client.post(f"/api/v1/decks/{deck_id}/export", headers=auth_headers)
+    imported = await client.post(
+        "/api/v1/decks/import",
+        files={"file": ("private.slaides", export.content, "application/zip")},
+        headers=auth_headers,
+    )
+    imported_widget_id = imported.json()["slides"][0]["widgets"][0]["widget_id"]
+
+    imported_thread = await client.get(f"/api/v1/widgets/{imported_widget_id}/ai-thread", headers=auth_headers)
+    assert imported_thread.status_code == 200
+    assert imported_thread.json() is None
+
+
 async def test_duplicate_deck(client, auth_headers):
     create = await client.post("/api/v1/decks", json={"title": "Original"}, headers=auth_headers)
     deck_id = create.json()["id"]
