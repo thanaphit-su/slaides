@@ -38,6 +38,24 @@ Useful local URLs:
 - Supabase API/Auth: `http://localhost:54321`
 - Supabase Studio: `http://localhost:54323`
 
+## Production container rehearsal
+
+`docker-compose.prod.yml` builds the FastAPI API and the Vue static web image, runs Redis with persistence, and expects managed Postgres/Supabase values through environment variables.
+
+1. Set production environment variables: `DATABASE_URL`, `CORS_ORIGINS`, `JWT_SECRET`, `GUEST_JWT_SECRET`, `SUPABASE_URL`, `SUPABASE_ANON_KEY`, `SUPABASE_SERVICE_ROLE_KEY`, `SUPABASE_JWT_SECRET`, and `LLM_ENCRYPTION_SECRET`.
+2. Run `make prod-build`.
+3. Run `make prod-migrate`.
+4. Run `make prod-up`.
+5. Check `GET /readyz` through the deployed web/API route.
+
+Before a first large live session, create a real live session and run:
+
+```bash
+make load-rehearsal API_URL=https://your-host.example/api/v1 CODE=SLD-XXXX-XX AUDIENCE=150 CONCURRENCY=25
+```
+
+For a loud-widget burst test, add `PLACEMENT_ID=<placement_id>`. The rehearsal exits non-zero if errors occur or p95 budgets are exceeded.
+
 ## How to read the prototype
 
 1. Open `.draft/prototype/slaides.html` in a browser.

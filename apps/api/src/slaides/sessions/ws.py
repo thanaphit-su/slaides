@@ -164,6 +164,10 @@ class Hub:
             count += 1
         return count
 
+    async def ping(self) -> bool:
+        redis = await self._ensure_redis()
+        return bool(await redis.ping())
+
     async def heartbeat(self, session_id: uuid.UUID, participant_ref: str) -> None:
         redis = await self._ensure_redis()
         key = PRESENCE_PREFIX.format(sid=session_id) + participant_ref

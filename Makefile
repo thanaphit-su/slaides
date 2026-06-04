@@ -1,4 +1,4 @@
-.PHONY: up down supabase-up supabase-down supabase-status redis-up migrate seed approve-user delete-user api web test test-api test-web install install-api install-web
+.PHONY: up down supabase-up supabase-down supabase-status redis-up migrate seed approve-user delete-user api web test test-api test-web install install-api install-web prod-build prod-up prod-down prod-migrate load-rehearsal
 
 up: supabase-up
 	@echo "Supabase and Redis ready."
@@ -58,3 +58,19 @@ test-web:
 	cd apps/web && npm test
 
 test: test-api test-web
+
+prod-build:
+	docker compose -f docker-compose.prod.yml build
+
+prod-up:
+	docker compose -f docker-compose.prod.yml up -d
+
+prod-down:
+	docker compose -f docker-compose.prod.yml down
+
+prod-migrate:
+	docker compose -f docker-compose.prod.yml run --rm api alembic upgrade head
+
+load-rehearsal:
+	@if [ -z "$(API_URL)" ] || [ -z "$(CODE)" ]; then echo "Usage: make load-rehearsal API_URL=https://host/api/v1 CODE=SLD-XXXX-XX [AUDIENCE=150] [CONCURRENCY=25] [PLACEMENT_ID=live-poll]"; exit 2; fi
+	cd apps/api && uv run python -m scripts.load_rehearsal --api-url "$(API_URL)" --code "$(CODE)" --audience "$(or $(AUDIENCE),150)" --concurrency "$(or $(CONCURRENCY),25)" $(if $(PLACEMENT_ID),--placement-id "$(PLACEMENT_ID)",)

@@ -3,8 +3,10 @@ from __future__ import annotations
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI
+from fastapi import FastAPI, status
+from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
+from sqlalchemy import text
 
 from .auth.router import router as auth_router
 from .auth.supabase import get_supabase_auth
@@ -14,6 +16,7 @@ from .llm.router import router as llm_router
 from .sessions.router import router as sessions_router
 from .sessions.ws import hub as ws_hub
 from .sessions.ws import router as sessions_ws_router
+from .db.base import get_session_factory
 from .settings import get_settings
 from .widgets.router import deck_widget_router as widgets_deck_router
 from .widgets.router import import_router as widgets_import_router
@@ -47,6 +50,26 @@ def create_app() -> FastAPI:
     @app.get("/healthz")
     async def healthz() -> dict:
         return {"ok": True}
+
+    @app.get("/readyz")
+    async def readyz():
+        checks = {"database": False, "redis": False}
+        try:
+            factory = get_session_factory()
+            async with factory() as session:
+                await session.execute(text("select 1"))
+            checks["database"] = True
+        except Exception:
+            checks["database"] = False
+
+        try:
+            checks["redis"] = await ws_hub.ping()
+        except Exception:
+            checks["redis"] = False
+
+        ok = all(checks.values())
+        code = status.HTTP_200_OK if ok else status.HTTP_503_SERVICE_UNAVAILABLE
+        return JSONResponse(status_code=code, content={"ok": ok, "checks": checks})
 
     app.include_router(auth_router, prefix="/api/v1")
     app.include_router(workspace_router, prefix="/api/v1")

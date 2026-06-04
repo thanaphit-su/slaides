@@ -2,8 +2,11 @@ from __future__ import annotations
 
 import uuid
 
+from sqlalchemy.exc import IntegrityError
+
 from slaides.db import models
 from slaides.db.base import get_session_factory
+from slaides.auth.router import is_participant_unique_conflict
 from slaides.sessions.ws import _supabase_host_from_token
 
 
@@ -168,6 +171,13 @@ async def test_cache_expiry_forces_fresh_lookup(client, auth_headers, fake_supab
     res = await client.get("/api/v1/auth/me", headers=auth_headers)
     assert res.status_code == 200
     assert fake_supabase_auth.remote_get_user_calls - start == 2
+
+
+def test_participant_unique_conflict_is_detected():
+    original = Exception("UNIQUE constraint failed: participant.session_id, participant.ref")
+    exc = IntegrityError("insert into participant", {}, original)
+
+    assert is_participant_unique_conflict(exc)
 
 
 async def test_supabase_401_evicts_cached_entry(client, auth_headers, fake_supabase_auth, seeded_user):

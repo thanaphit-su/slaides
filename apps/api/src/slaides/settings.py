@@ -16,6 +16,7 @@ class Settings(BaseSettings):
     )
 
     database_url: str = "postgresql+asyncpg://postgres:postgres@localhost:54322/postgres"
+    slaides_env: str = "development"
     jwt_secret: str = "dev-jwt-secret-change-me"
     guest_jwt_secret: str = "dev-guest-jwt-secret-change-me"
     jwt_access_ttl: int = 900
@@ -52,6 +53,32 @@ class Settings(BaseSettings):
         self.supabase_anon_key = self.supabase_anon_key or values.get("ANON_KEY", "")
         self.supabase_service_role_key = self.supabase_service_role_key or values.get("SERVICE_ROLE_KEY", "")
         self.supabase_jwt_secret = self.supabase_jwt_secret or values.get("JWT_SECRET", "")
+        return self
+
+    @model_validator(mode="after")
+    def reject_unsafe_production_defaults(self) -> Settings:
+        if self.slaides_env.strip().lower() != "production":
+            return self
+        unsafe: list[str] = []
+        if self.jwt_secret == "dev-jwt-secret-change-me" or len(self.jwt_secret) < 32:
+            unsafe.append("JWT_SECRET")
+        if (
+            self.guest_jwt_secret == "dev-guest-jwt-secret-change-me"
+            or len(self.guest_jwt_secret) < 32
+            or self.guest_jwt_secret == self.jwt_secret
+        ):
+            unsafe.append("GUEST_JWT_SECRET")
+        if "localhost" in self.cors_origins or "127.0.0.1" in self.cors_origins:
+            unsafe.append("CORS_ORIGINS")
+        if "localhost" in self.database_url or "127.0.0.1" in self.database_url:
+            unsafe.append("DATABASE_URL")
+        if "localhost" in self.redis_url or "127.0.0.1" in self.redis_url:
+            unsafe.append("REDIS_URL")
+        if self.supabase_jwt_secret and len(self.supabase_jwt_secret) < 32:
+            unsafe.append("SUPABASE_JWT_SECRET")
+        if unsafe:
+            names = ", ".join(sorted(set(unsafe)))
+            raise ValueError(f"production settings are unsafe: {names}")
         return self
 
     def _uses_local_supabase_db(self) -> bool:

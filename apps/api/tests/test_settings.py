@@ -2,6 +2,9 @@ from __future__ import annotations
 
 import subprocess
 
+import pytest
+from pydantic import ValidationError
+
 import slaides.settings as settings_module
 from slaides.settings import Settings
 
@@ -53,3 +56,8 @@ def test_local_supabase_keys_fall_back_to_cli_status_when_missing(monkeypatch):
     assert settings.supabase_url == "http://127.0.0.1:54321"
     assert settings.supabase_anon_key == "local-anon"
     assert settings.supabase_service_role_key == "local-service"
+
+
+def test_production_settings_reject_dev_defaults():
+    with pytest.raises(ValidationError, match="production settings are unsafe"):
+        Settings(slaides_env="production")

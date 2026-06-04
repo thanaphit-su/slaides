@@ -10,6 +10,7 @@ import fakeredis.aioredis as fakeredis_async
 import pytest
 
 from slaides.sessions.placement_state_service import (
+    placement_state_select_for_update,
     contribute_to_placement,
     list_session_placement_states,
     load_placement_state,
@@ -470,6 +471,12 @@ async def test_contribute_to_placement_locks_aggregator(app_with_db):
                 value="something",
                 participant_ref="ref1",
             )
+
+
+def test_placement_state_lookup_uses_row_lock_for_writes():
+    stmt = placement_state_select_for_update(uuid.uuid4(), "live-poll")
+
+    assert stmt._for_update_arg is not None
 
 
 async def test_cross_deck_placement_id_collision_resolves_to_current_session_deck(

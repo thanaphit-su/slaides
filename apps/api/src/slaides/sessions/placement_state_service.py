@@ -15,6 +15,7 @@ import uuid
 from datetime import datetime, timezone
 
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm.attributes import flag_modified
 
@@ -29,6 +30,17 @@ from .aggregators import (
 VALID_AGGREGATORS = {"tally", "latest_per_participant", "append", "set_union", "keyed_tally", "collect"}
 
 
+def placement_state_select_for_update(session_id: uuid.UUID, placement_id: str):
+    return (
+        select(PlacementState)
+        .where(
+            PlacementState.session_id == session_id,
+            PlacementState.placement_id == placement_id,
+        )
+        .with_for_update()
+    )
+
+
 async def load_placement_state(
     session: AsyncSession,
     session_id: uuid.UUID,
@@ -41,6 +53,16 @@ async def load_placement_state(
                 PlacementState.placement_id == placement_id,
             )
         )
+    ).scalar_one_or_none()
+
+
+async def _load_placement_state_for_update(
+    session: AsyncSession,
+    session_id: uuid.UUID,
+    placement_id: str,
+) -> PlacementState | None:
+    return (
+        await session.execute(placement_state_select_for_update(session_id, placement_id))
     ).scalar_one_or_none()
 
 
@@ -77,7 +99,7 @@ async def contribute_to_placement(
     if aggregator not in VALID_AGGREGATORS:
         raise ValueError(f"unsupported aggregator: {aggregator!r}")
 
-    row = await load_placement_state(session, session_id, placement_id)
+    row = await _load_placement_state_for_update(session, session_id, placement_id)
     if row is None:
         row = PlacementState(
             session_id=session_id,
@@ -88,8 +110,14 @@ async def contribute_to_placement(
             contribution_count=0,
             state_version=0,
         )
-        session.add(row)
-        await session.flush()
+        try:
+            async with session.begin_nested():
+                session.add(row)
+                await session.flush()
+        except IntegrityError:
+            row = await _load_placement_state_for_update(session, session_id, placement_id)
+            if row is None:
+                raise
     if row.closed_at is not None:
         raise RuntimeError("placement is closed")
     if row.aggregator != aggregator:
