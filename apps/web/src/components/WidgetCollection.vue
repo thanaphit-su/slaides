@@ -462,6 +462,14 @@ watch(
   { immediate: true },
 );
 
+watch(
+  () => [tab.value === "generate", messages.value.length] as const,
+  ([chatOpen]) => {
+    if (chatOpen) void scrollThreadToBottom();
+  },
+  { immediate: true },
+);
+
 const filtered = computed(() =>
   widgets.summaries.filter(
     (w) =>

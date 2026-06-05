@@ -540,6 +540,52 @@ describe("WidgetCollection — structured widget workflow", () => {
     expect(wrapper.text()).toContain("Will use tally.");
   });
 
+  it("scrolls to the latest message when an existing chat opens", async () => {
+    const scrollHeightDescriptor = Object.getOwnPropertyDescriptor(HTMLElement.prototype, "scrollHeight");
+    Object.defineProperty(HTMLElement.prototype, "scrollHeight", {
+      configurable: true,
+      get: () => 720,
+    });
+    getAiThreadMock.mockResolvedValue({
+      id: "thread-1",
+      widget_id: "w-existing",
+      title: "Existing thread",
+      compact_summary: {},
+      messages: [
+        {
+          id: "m-user",
+          thread_id: "thread-1",
+          role: "user",
+          message_type: "user",
+          content: { text: "First request" },
+          revision_id: null,
+        },
+        {
+          id: "m-assistant",
+          thread_id: "thread-1",
+          role: "assistant",
+          message_type: "reflection",
+          content: { reflection: "Latest answer" },
+          revision_id: "rev-1",
+        },
+      ],
+    });
+
+    try {
+      const wrapper = await mountInAdjustMode();
+      await new Promise((r) => setTimeout(r, 0));
+      await nextTick();
+
+      expect((wrapper.get(".widget-chat-thread").element as HTMLElement).scrollTop).toBe(720);
+    } finally {
+      if (scrollHeightDescriptor) {
+        Object.defineProperty(HTMLElement.prototype, "scrollHeight", scrollHeightDescriptor);
+      } else {
+        delete (HTMLElement.prototype as unknown as { scrollHeight?: number }).scrollHeight;
+      }
+    }
+  });
+
   it("hydrates apply records as compact draft references, not duplicate previews", async () => {
     getAiThreadMock.mockResolvedValue({
       id: "thread-1",
