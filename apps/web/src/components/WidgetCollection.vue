@@ -526,6 +526,43 @@ function stripCodeFence(text: string): string {
   return match ? match[1].trim() : trimmed;
 }
 
+function repairableWorkflowJson(text: string): string {
+  const source = stripCodeFence(text).replace(/\nInvalid widget workflow:[\s\S]*$/i, "").trim();
+  const start = source.indexOf("{");
+  if (start < 0) return source;
+  const stack: string[] = [];
+  let inString = false;
+  let escape = false;
+  for (let i = start; i < source.length; i += 1) {
+    const ch = source[i];
+    if (inString) {
+      if (escape) escape = false;
+      else if (ch === "\\") escape = true;
+      else if (ch === "\"") inString = false;
+      continue;
+    }
+    if (ch === "\"") {
+      inString = true;
+      continue;
+    }
+    if (ch === "{") {
+      stack.push("}");
+      continue;
+    }
+    if (ch === "[") {
+      stack.push("]");
+      continue;
+    }
+    if (ch === "}" || ch === "]") {
+      if (stack.at(-1) !== ch) return source;
+      stack.pop();
+      if (stack.length === 0) return source.slice(start, i + 1);
+    }
+  }
+  if (inString) return source;
+  return source.slice(start) + stack.reverse().join("");
+}
+
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
@@ -563,7 +600,7 @@ function normaliseWidgetDraft(parsed: Partial<Widget>, workflow: Extract<WidgetW
 }
 
 function parseWidgetWorkflow(text: string): WidgetWorkflow {
-  const parsed = JSON.parse(stripCodeFence(text)) as unknown;
+  const parsed = JSON.parse(repairableWorkflowJson(text)) as unknown;
   if (!isRecord(parsed)) throw new Error("workflow response must be an object");
   if (parsed.type === "question") {
     if (typeof parsed.question !== "string") throw new Error("question response requires question");

@@ -376,6 +376,35 @@ describe("WidgetCollection — structured widget workflow", () => {
     expect(wrapper.text()).toContain("Word cloud");
   });
 
+  it("locally repairs a draft envelope missing only trailing JSON closers", async () => {
+    const wrapper = await mountInCreateMode();
+    const complete = JSON.stringify({
+      type: "draft",
+      widget: {
+        name: "Time Point",
+        kind: "timeline",
+        description: "x",
+        html: "<section>timeline</section>",
+        js: "",
+        css: "",
+        props_schema: {},
+        tags: [],
+        behavior: { kind: "quiet" },
+      },
+    });
+    llmMock.mockResolvedValueOnce(
+      complete.slice(0, -1) +
+        "\nInvalid widget workflow: Expected ',' or '}' after property value in JSON at position 5618",
+    );
+
+    await sendPrompt(wrapper);
+
+    expect(llmMock).toHaveBeenCalledTimes(1);
+    expect(wrapper.find(".widget-preview-card").exists()).toBe(true);
+    expect(wrapper.text()).toContain("Time Point");
+    expect(wrapper.text()).not.toContain("AI returned an invalid widget workflow response.");
+  });
+
   it("self-repairs broken draft JavaScript before rendering a preview", async () => {
     const wrapper = await mountInCreateMode();
     llmMock
