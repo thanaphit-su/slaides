@@ -188,6 +188,9 @@ const activeSlideIndex = computed(() => {
 });
 
 const activePlacement = computed(() => activeSlide.value?.widgets[0] ?? null);
+const sessionActionHint = computed(() =>
+  activeSession.value ? `Resume · ${activeSession.value.code}` : "Start a live session for this deck",
+);
 
 function onCanvasFocusChange(focused: boolean) {
   canvasFocused.value = focused;
@@ -842,9 +845,11 @@ function onDeleteSlideById(id: string) {
           <Icon name="gear" :size="16" />
         </button>
         <button
-          class="btn btn-primary btn-sm"
+          class="btn btn-primary btn-sm themed-tooltip"
+          data-testid="editor-start-session-button"
           @click="onStartSession"
-          :title="activeSession ? `Resume · ${activeSession.code}` : 'Start a live session for this deck'"
+          :aria-label="sessionActionHint"
+          :data-tooltip="sessionActionHint"
         >
           <span :style="{ width: '6px', height: '6px', borderRadius: '50%', background: 'var(--live)' }" />
           {{ activeSession ? "Resume session" : "Start session" }}
@@ -1357,6 +1362,41 @@ function onDeleteSlideById(id: string) {
   color: var(--accent);
 }
 
+.themed-tooltip {
+  position: relative;
+}
+
+.themed-tooltip::after {
+  content: attr(data-tooltip);
+  position: absolute;
+  top: calc(100% + 8px);
+  right: 0;
+  z-index: 40;
+  max-width: 260px;
+  width: max-content;
+  padding: 5px 8px;
+  border: 1px solid var(--rule);
+  border-radius: var(--r-xs);
+  background: var(--paper-2);
+  color: var(--ink);
+  box-shadow: var(--shadow-2);
+  font-family: var(--sans);
+  font-size: 11px;
+  font-weight: 500;
+  line-height: 1.25;
+  white-space: nowrap;
+  opacity: 0;
+  pointer-events: none;
+  transform: translateY(-2px);
+  transition: opacity 0.12s ease, transform 0.12s ease;
+}
+
+.themed-tooltip:hover::after,
+.themed-tooltip:focus-visible::after {
+  opacity: 1;
+  transform: translateY(0);
+}
+
 .editor-slide-scroll {
   scrollbar-width: none;
   -ms-overflow-style: none;
@@ -1391,9 +1431,9 @@ function onDeleteSlideById(id: string) {
 }
 
 .widget-drop-active {
-  outline: 2px dashed var(--accent, #0d3b80);
+  outline: 2px dashed var(--accent);
   outline-offset: -8px;
-  background: rgba(13, 59, 128, 0.025);
+  background: var(--accent-soft);
 }
 
 .widget-drop-overlay {
@@ -1409,7 +1449,7 @@ function onDeleteSlideById(id: string) {
 
 .widget-drop-overlay-card {
   background: var(--paper);
-  border: 1px solid var(--accent, #0d3b80);
+  border: 1px solid var(--accent);
   border-radius: var(--r-md);
   padding: 8px 14px;
   font-family: var(--sans);

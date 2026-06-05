@@ -74,10 +74,13 @@ const ALLOWED_INTERACTION_TYPES = new Set([
 const MAX_INFLIGHT_LLM = 4;
 const inflightLlm = new Map<string, AbortController>();
 
-// Theme tokens are resolved once at mount time and baked into the iframe's
-// :root. Shared with WidgetThumbnail so the sidebar previews and the canvas
-// render against the same token set. See widgets/theme-tokens.ts.
-const hostTokens = readHostTokens();
+// Theme tokens are baked into the iframe's :root. CSS variables do not cross
+// iframe boundaries, so refresh the srcdoc whenever the host theme changes.
+const hostTokens = ref(readHostTokens());
+
+function refreshThemeTokens(): void {
+  hostTokens.value = readHostTokens();
+}
 
 function cloneForPostMessage(value: Record<string, unknown>): Record<string, unknown> {
   try {
@@ -225,7 +228,7 @@ function buildSrcdoc(w: Widget, boot: Record<string, unknown>, fill: boolean): s
     "frame-ancestors 'self';";
   // Bake host theme tokens into the iframe's :root so widgets can reference
   // `var(--background)`, `var(--primary)`, etc. instead of hard-coding hex.
-  const themeStyle = buildThemeStyleBlock(hostTokens, { fill });
+  const themeStyle = buildThemeStyleBlock(hostTokens.value, { fill });
   const widgetCss = w.css ? `<style>\n${w.css}\n</style>` : "";
   const widgetJs = w.js ? `${open}\n${w.js}\n${close}` : "";
   const selectionBridgeScript =
@@ -310,7 +313,7 @@ ${close}`
   }
   function outline(el, on){
     if (!el || !el.style) return;
-    el.style.outline = on ? "2px solid #d9534f" : "";
+    el.style.outline = on ? "2px solid var(--destructive)" : "";
     el.style.outlineOffset = on ? "2px" : "";
   }
   document.addEventListener("mouseover", function(e){
@@ -537,11 +540,13 @@ function onIframeLoad() {
 onMounted(() => {
   window.addEventListener("message", onMessage);
   window.addEventListener("slaides:widget-broadcast", onBroadcast as EventListener);
+  window.addEventListener("slaides:theme-changed", refreshThemeTokens);
 });
 onBeforeUnmount(() => {
   window.clearTimeout(revealTimer);
   window.removeEventListener("message", onMessage);
   window.removeEventListener("slaides:widget-broadcast", onBroadcast as EventListener);
+  window.removeEventListener("slaides:theme-changed", refreshThemeTokens);
   for (const controller of inflightLlm.values()) controller.abort();
   inflightLlm.clear();
 });

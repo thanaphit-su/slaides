@@ -3098,7 +3098,7 @@ async function doDelete(force: boolean) {
   padding: 4px 8px;
   border: 1px solid var(--rule);
   border-radius: var(--r-sm);
-  background: var(--bg-soft, #f3f3f3);
+  background: var(--paper-2);
   font-family: var(--sans);
   font-size: 11.5px;
   color: var(--ink);

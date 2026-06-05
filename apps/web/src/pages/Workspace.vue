@@ -12,7 +12,7 @@ import Toggle from "@/components/Toggle.vue";
 import DeckCard from "@/components/DeckCard.vue";
 import DeckList from "@/components/DeckList.vue";
 import NewDeckCard from "@/components/NewDeckCard.vue";
-import SettingsDrawer from "@/components/SettingsDrawer.vue";
+import AccountMenu from "@/components/AccountMenu.vue";
 
 const auth = useAuthStore();
 const ws = useWorkspaceStore();
@@ -41,9 +41,6 @@ watch(
 );
 const fileInput = ref<HTMLInputElement | null>(null);
 const dragging = ref(false);
-const settingsOpen = ref(false);
-const accountMenuOpen = ref(false);
-const accountMenuEl = ref<HTMLElement | null>(null);
 const joinMenuOpen = ref(false);
 const joinMenuEl = ref<HTMLElement | null>(null);
 const joinCode = ref("");
@@ -155,7 +152,6 @@ function openDeck(id: string) {
 function toggleJoinMenu() {
   joinMenuOpen.value = !joinMenuOpen.value;
   joinNotice.value = null;
-  if (joinMenuOpen.value) accountMenuOpen.value = false;
 }
 
 async function submitJoinSession(e: Event) {
@@ -209,22 +205,14 @@ async function onDrop(e: DragEvent) {
 }
 
 function signOut() {
-  accountMenuOpen.value = false;
   auth.signOut();
   router.push("/signin");
-}
-
-function toggleAccountMenu() {
-  accountMenuOpen.value = !accountMenuOpen.value;
-  if (accountMenuOpen.value) joinMenuOpen.value = false;
 }
 
 function onDocumentClick(e: MouseEvent) {
   const target = e.target;
   if (!(target instanceof Node)) return;
-  if (accountMenuEl.value?.contains(target)) return;
   if (joinMenuEl.value?.contains(target)) return;
-  accountMenuOpen.value = false;
   joinMenuOpen.value = false;
 }
 
@@ -406,51 +394,11 @@ const heroKicker = computed(() => {
             }"
           />
         </div>
-        <button v-if="auth.isApproved" class="btn btn-ghost" title="Settings" @click="settingsOpen = true">
-          <Icon name="gear" :size="16" />
-        </button>
-        <div ref="accountMenuEl" class="account-menu-wrap">
-          <button
-            class="btn btn-ghost"
-            :title="auth.user?.display_name || 'You'"
-            :aria-expanded="accountMenuOpen"
-            aria-haspopup="menu"
-            data-testid="account-avatar-button"
-            @click.stop="toggleAccountMenu"
-            :style="{ padding: '4px 8px' }"
-          >
-            <span class="account-avatar">
-              {{ (auth.user?.display_name || auth.user?.email || "A").slice(0, 1).toUpperCase() }}
-            </span>
-          </button>
-          <div
-            v-if="accountMenuOpen"
-            class="account-menu"
-            role="menu"
-            data-testid="account-menu"
-            @click.stop
-          >
-            <div class="account-menu-identity">
-              <span class="account-avatar account-avatar-large">
-                {{ (auth.user?.display_name || auth.user?.email || "A").slice(0, 1).toUpperCase() }}
-              </span>
-              <div>
-                <strong>{{ auth.user?.display_name || "Instructor" }}</strong>
-                <small>{{ auth.user?.email }}</small>
-              </div>
-            </div>
-            <button
-              type="button"
-              class="account-menu-item danger"
-              role="menuitem"
-              data-testid="account-menu-signout"
-              @click="signOut"
-            >
-              <Icon name="logout" :size="14" />
-              Sign out
-            </button>
-          </div>
-        </div>
+        <AccountMenu
+          :user-name="auth.user?.display_name || 'Instructor'"
+          :user-email="auth.user?.email"
+          @sign-out="signOut"
+        />
       </div>
     </header>
 
@@ -624,14 +572,6 @@ const heroKicker = computed(() => {
       </div>
     </footer>
 
-    <SettingsDrawer
-      :open="settingsOpen"
-      :user-name="auth.user?.display_name"
-      :user-email="auth.user?.email"
-      @close="settingsOpen = false"
-      @sign-out="signOut"
-    />
-
     <div
       v-if="confirmDelete"
       class="delete-backdrop"
@@ -709,9 +649,6 @@ const heroKicker = computed(() => {
 .fade-leave-to {
   opacity: 0;
 }
-.account-menu-wrap {
-  position: relative;
-}
 .workspace-join-wrap {
   position: relative;
 }
@@ -784,85 +721,6 @@ const heroKicker = computed(() => {
   color: var(--err);
   font-size: 12px;
   line-height: 1.4;
-}
-.account-avatar {
-  width: 28px;
-  height: 28px;
-  border-radius: 50%;
-  background: var(--ink);
-  color: var(--paper);
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  font-family: var(--serif);
-  font-size: 13px;
-  font-weight: 500;
-}
-.account-avatar-large {
-  width: 34px;
-  height: 34px;
-  flex: 0 0 auto;
-}
-.account-menu {
-  position: absolute;
-  top: calc(100% + 8px);
-  right: 0;
-  z-index: 50;
-  min-width: 230px;
-  border: 1px solid var(--rule);
-  border-radius: var(--r-md);
-  background: var(--paper);
-  box-shadow: var(--shadow-3);
-  padding: 6px;
-}
-.account-menu-identity {
-  display: flex;
-  gap: 10px;
-  align-items: center;
-  padding: 8px;
-  border-bottom: 1px solid var(--rule);
-  margin-bottom: 4px;
-}
-.account-menu-identity strong,
-.account-menu-identity small {
-  display: block;
-  max-width: 160px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.account-menu-identity strong {
-  font-size: 13px;
-  font-family: var(--sans);
-  color: var(--ink);
-}
-.account-menu-identity small {
-  margin-top: 2px;
-  font-size: 11px;
-  color: var(--ink-soft);
-}
-.account-menu-item {
-  width: 100%;
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  border: 0;
-  border-radius: var(--r-sm);
-  background: transparent;
-  color: var(--ink);
-  padding: 8px;
-  font-family: var(--sans);
-  font-size: 13px;
-  font-weight: 600;
-  cursor: pointer;
-}
-.account-menu-item:hover,
-.account-menu-item:focus-visible {
-  background: var(--paper-2);
-  outline: none;
-}
-.account-menu-item.danger {
-  color: var(--err);
 }
 .approval-block,
 .sessions-placeholder {
@@ -1050,9 +908,9 @@ const heroKicker = computed(() => {
   gap: 8px;
 }
 .btn-danger {
-  background: var(--err, #c2410c);
+  background: var(--err);
   color: var(--paper);
-  border: 1px solid var(--err, #c2410c);
+  border: 1px solid var(--err);
 }
 .btn-danger:hover:not(:disabled) {
   filter: brightness(0.95);
@@ -1072,8 +930,8 @@ const heroKicker = computed(() => {
   border: 1px solid var(--rule);
 }
 .btn-danger-ghost:hover:not(:disabled) {
-  color: var(--err, #c2410c);
-  border-color: var(--err, #c2410c);
+  color: var(--err);
+  border-color: var(--err);
   background: var(--paper-2);
 }
 .btn-danger-ghost:disabled {

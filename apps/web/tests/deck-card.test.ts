@@ -67,4 +67,20 @@ describe("DeckCard", () => {
     const badge = wrapper.get('[data-testid="deck-card-live-badge"]');
     expect(badge.text()).toBe("LIVE");
   });
+
+  it("uses class-based chrome so dark mode can restyle the card shell", () => {
+    const wrapper = mount(DeckCard, {
+      props: { deck: deck() },
+      global: {
+        stubs: {
+          DeckCover: true,
+          Icon: true,
+        },
+      },
+    });
+
+    expect(wrapper.classes()).toContain("deck-card");
+    expect(wrapper.find(".deck-card-cover").exists()).toBe(true);
+    expect(wrapper.find(".deck-card-body").exists()).toBe(true);
+  });
 });

@@ -23,4 +23,18 @@ describe("DeckCover", () => {
 
     expect(wrapper.findAll("circle")).toHaveLength(0);
   });
+
+  it("uses theme variables for first-slide preview colors", () => {
+    const wrapper = mount(DeckCover, {
+      props: {
+        markdown: "# Welcome to SLAIDES\n\nYou build a deck like a writer.",
+        kicker: "$ 01 - Hello",
+      },
+    });
+
+    const svg = wrapper.get("svg");
+    expect(svg.html()).toContain('fill="var(--paper)"');
+    expect(svg.html()).toContain('fill="var(--ink)"');
+    expect(svg.html()).toContain('fill="var(--accent)"');
+  });
 });

@@ -926,9 +926,9 @@ function onSlideDragEnd() {
   gap: 8px;
 }
 .btn-danger {
-  background: var(--err, #c2410c);
+  background: var(--err);
   color: var(--paper);
-  border: 1px solid var(--err, #c2410c);
+  border: 1px solid var(--err);
 }
 .btn-danger:hover {
   filter: brightness(0.95);
@@ -967,7 +967,7 @@ function onSlideDragEnd() {
   bottom: 4px;
   width: 2px;
   border-radius: 1px;
-  background: var(--accent, #0d3b80);
+  background: var(--accent);
 }
 
 .widgets-tab {

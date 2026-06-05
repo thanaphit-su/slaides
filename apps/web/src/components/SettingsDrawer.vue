@@ -4,6 +4,7 @@ import { workspaceApi } from "@/api/workspace";
 import { llmApi } from "@/api/llm";
 import { useSessionStore } from "@/stores/session";
 import Icon from "@/components/Icon.vue";
+import { useThemeMode, type ThemeMode } from "@/theme/useThemeMode";
 import type { InterpretQuickOption, LlmCapability, LlmModelConfig, Workspace, WorkspacePatch } from "@/api/types";
 
 const props = defineProps<{
@@ -28,6 +29,7 @@ const error = ref<string | null>(null);
 const clearKey = ref(false);
 const advancedModelId = ref<string | null>(null);
 const session = useSessionStore();
+const theme = useThemeMode();
 
 const defaultInterpretQuickOptions: InterpretQuickOption[] = [
   { label: "AI", instruction: "in plain English" },
@@ -51,6 +53,12 @@ const capabilities: Array<{ key: LlmCapability; title: string; description: stri
     title: "Generate widgets (HTML/JS)",
     description: "Draft a working widget from a prompt.",
   },
+];
+
+const themeOptions: { value: ThemeMode; label: string; description: string }[] = [
+  { value: "system", label: "System", description: "Follow this device." },
+  { value: "light", label: "Light", description: "Use the editorial light palette." },
+  { value: "dark", label: "Dark", description: "Use the low-light palette." },
 ];
 
 const form = reactive({
@@ -577,7 +585,23 @@ watch(tab, () => {
           <section v-if="tab === 'display'" class="settings-stack">
             <div class="settings-block">
               <h3>Display</h3>
-              <p>Dark mode and editor density persistence are coming in a later release.</p>
+              <p>Choose how SLAIDES appears on this device.</p>
+              <div class="theme-mode-grid" role="radiogroup" aria-label="Theme mode">
+                <button
+                  v-for="option in themeOptions"
+                  :key="option.value"
+                  type="button"
+                  class="theme-mode-option"
+                  :class="{ active: theme.mode.value === option.value }"
+                  :data-testid="`theme-mode-${option.value}`"
+                  :aria-checked="theme.mode.value === option.value"
+                  role="radio"
+                  @click="theme.setMode(option.value)"
+                >
+                  <strong>{{ option.label }}</strong>
+                  <span>{{ option.description }}</span>
+                </button>
+              </div>
             </div>
           </section>
 
@@ -688,6 +712,32 @@ watch(tab, () => {
   font-family: var(--serif);
   font-size: 14px;
   line-height: 1.45;
+}
+
+.theme-mode-grid {
+  display: grid;
+  gap: 8px;
+}
+
+.theme-mode-option {
+  border: 1px solid var(--rule);
+  background: var(--paper-2);
+  color: var(--ink);
+  border-radius: var(--r-md);
+  padding: 10px 12px;
+  text-align: left;
+  display: grid;
+  gap: 3px;
+}
+
+.theme-mode-option span {
+  color: var(--ink-soft);
+  font-size: 12px;
+}
+
+.theme-mode-option.active {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-soft);
 }
 
 .field-gap {

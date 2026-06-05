@@ -112,9 +112,9 @@ watch(
   gap: 8px;
 }
 .btn-danger {
-  background: var(--err, #c2410c);
+  background: var(--err);
   color: var(--paper);
-  border: 1px solid var(--err, #c2410c);
+  border: 1px solid var(--err);
 }
 .btn-danger:hover:not(:disabled) {
   filter: brightness(0.95);

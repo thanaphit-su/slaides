@@ -395,7 +395,7 @@ defineExpose({ focus });
 }
 
 .wys-toolbar button.accent {
-  color: #8bb0ff;
+  color: var(--accent-2);
   font-weight: 700;
 }
 

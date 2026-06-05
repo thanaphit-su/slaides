@@ -146,4 +146,14 @@ describe("editor keyboard navigation", () => {
     expect(wrapper.get('[data-testid="editor-slide"]').text()).toBe("slide-a");
     input.remove();
   });
+
+  it("uses a themed tooltip for the start session action", async () => {
+    wrapper = mountEditor();
+    await flushPromises();
+
+    const button = wrapper.get('[data-testid="editor-start-session-button"]');
+    expect(button.attributes("title")).toBeUndefined();
+    expect(button.attributes("data-tooltip")).toBe("Start a live session for this deck");
+    expect(button.classes()).toContain("themed-tooltip");
+  });
 });

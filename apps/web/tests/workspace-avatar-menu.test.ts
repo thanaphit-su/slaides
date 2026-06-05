@@ -81,6 +81,11 @@ describe("workspace avatar menu", () => {
     expect(signOut).not.toHaveBeenCalled();
     expect(wrapper.get('[data-testid="account-menu"]').text()).toContain("Field Notes");
 
+    await wrapper.get('[data-testid="account-theme-dark"]').trigger("click");
+
+    expect(document.documentElement.classList.contains("dark")).toBe(true);
+    expect(localStorage.getItem("slaides:theme-mode")).toBe("dark");
+
     await wrapper.get('[data-testid="account-menu-signout"]').trigger("click");
 
     expect(signOut).toHaveBeenCalledOnce();
