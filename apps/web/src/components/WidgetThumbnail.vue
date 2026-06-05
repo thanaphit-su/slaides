@@ -170,7 +170,7 @@ function onDeleteClick(e: MouseEvent) {
 }
 
 .widget-thumbnail-dot.is-loud {
-  color: var(--accent, #c45a3b);
+  color: var(--accent);
 }
 
 .widget-thumbnail-dot.is-quiet {

@@ -714,7 +714,7 @@ watch(slideIndex, writeQuery);
 
 .preview-views-rail {
   border-right: 1px solid var(--rule);
-  background: var(--bg-soft, #f7f7f7);
+  background: var(--paper-2);
   padding: 10px 10px 14px;
   overflow-y: auto;
   display: flex;
@@ -818,7 +818,7 @@ watch(slideIndex, writeQuery);
   min-width: 0;
   padding: 14px;
   gap: 0;
-  background: var(--bg-soft, #f7f7f7);
+  background: var(--paper-2);
 }
 
 .preview-stage-chrome {

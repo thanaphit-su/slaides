@@ -8,6 +8,7 @@ import { useWidgetsStore } from "@/stores/widgets";
 import { widgetsApi } from "@/api/widgets";
 import Wordmark from "@/components/Wordmark.vue";
 import Icon from "@/components/Icon.vue";
+import AccountMenu from "@/components/AccountMenu.vue";
 import SlideStage from "@/components/SlideStage.vue";
 import RaiseQuestionSheet from "@/components/RaiseQuestionSheet.vue";
 import LivePollSlide from "@/components/LivePollSlide.vue";
@@ -177,6 +178,12 @@ function exitToJoin() {
   router.replace(exitDestination());
 }
 
+function signOut() {
+  clearGuestToken(props.sessionId);
+  auth.signOut();
+  router.replace({ name: "signin" });
+}
+
 function onSubmitQuestion({ text, anonymous }: { text: string; anonymous: boolean }) {
   session.raiseQuestion(text, anonymous);
   sheetOpen.value = false;
@@ -231,9 +238,17 @@ function showToast(message: string) {
           LIVE
         </span>
       </div>
-      <span class="t-meta" :style="{ fontSize: '11px' }">
-        {{ session.audienceCount }} <Icon name="users" :size="11" />
-      </span>
+      <div :style="{ display: 'flex', alignItems: 'center', gap: '10px' }">
+        <span class="t-meta" :style="{ fontSize: '11px' }">
+          {{ session.audienceCount }} <Icon name="users" :size="11" />
+        </span>
+        <AccountMenu
+          v-if="!inPreviewIframe"
+          :user-name="auth.user?.display_name || guest?.display_name"
+          :user-email="auth.user?.email || (guest?.anon ? 'Anonymous audience' : 'Audience member')"
+          @sign-out="signOut"
+        />
+      </div>
     </header>
 
     <main class="audience-main">

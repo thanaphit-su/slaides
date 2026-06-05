@@ -706,8 +706,8 @@ onBeforeUnmount(() => {
   border: 1px solid var(--rule);
 }
 .btn-danger-ghost:hover:not(:disabled) {
-  color: var(--err, #c2410c);
-  border-color: var(--err, #c2410c);
+  color: var(--err);
+  border-color: var(--err);
   background: var(--paper-2);
 }
 .btn-danger-ghost:disabled {
@@ -762,7 +762,7 @@ onBeforeUnmount(() => {
   padding: 10px 14px;
   background: var(--paper-2);
   border: 1px solid var(--rule);
-  border-left: 3px solid var(--accent, #f59e0b);
+  border-left: 3px solid var(--accent);
   border-radius: var(--r-sm);
   color: var(--ink);
   font-size: 12.5px;

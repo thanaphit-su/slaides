@@ -40,6 +40,8 @@ describe("SettingsDrawer session settings", () => {
   beforeEach(() => {
     setActivePinia(createPinia());
     vi.clearAllMocks();
+    localStorage.clear();
+    document.documentElement.classList.remove("dark", "light");
   });
 
   it("saves quick options before emitting start-session", async () => {
@@ -72,5 +74,21 @@ describe("SettingsDrawer session settings", () => {
     );
     expect(wrapper.emitted("saved")?.[0]).toEqual([saved]);
     expect(wrapper.emitted("start-session")).toHaveLength(1);
+  });
+
+  it("changes theme mode from the Display tab", async () => {
+    vi.mocked(workspaceApi.get).mockResolvedValue(workspace());
+
+    const wrapper = mount(SettingsDrawer, {
+      props: { open: true, userName: "Instructor", userEmail: "instructor@example.com" },
+      global: { stubs: { Teleport: true, Toggle: true } },
+    });
+    await flushPromises();
+
+    await wrapper.findAll(".settings-tabs button").find((button) => button.text() === "Display")!.trigger("click");
+    await wrapper.get('[data-testid="theme-mode-dark"]').trigger("click");
+
+    expect(document.documentElement.classList.contains("dark")).toBe(true);
+    expect(localStorage.getItem("slaides:theme-mode")).toBe("dark");
   });
 });

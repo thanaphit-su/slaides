@@ -2,10 +2,12 @@
 import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import { maybeReceivePreviewAuth } from "@/preview/handshake";
 import { useRouter } from "vue-router";
+import { useAuthStore } from "@/stores/auth";
 import { useSessionStore } from "@/stores/session";
 import { useWidgetsStore } from "@/stores/widgets";
 import Wordmark from "@/components/Wordmark.vue";
 import Icon from "@/components/Icon.vue";
+import AccountMenu from "@/components/AccountMenu.vue";
 import SlideStage from "@/components/SlideStage.vue";
 import PresenterRail from "@/components/PresenterRail.vue";
 import OpenInteractionFab from "@/components/OpenInteractionFab.vue";
@@ -17,6 +19,7 @@ import AnswerModerationRail from "@/components/AnswerModerationRail.vue";
 
 const props = defineProps<{ sessionId: string }>();
 const router = useRouter();
+const auth = useAuthStore();
 const session = useSessionStore();
 const widgetsStore = useWidgetsStore();
 
@@ -270,6 +273,11 @@ async function endNow() {
   }
 }
 
+function signOut() {
+  auth.signOut();
+  router.push("/signin");
+}
+
 watch(
   () => session.ended,
   (isEnded) => {
@@ -365,6 +373,12 @@ watch(
           <Icon name="copy" :size="14" />
           {{ copied ? "Copied" : session.snapshot?.code || "…" }}
         </button>
+        <AccountMenu
+          v-if="!inPreviewIframe"
+          :user-name="auth.user?.display_name"
+          :user-email="auth.user?.email"
+          @sign-out="signOut"
+        />
       </div>
     </header>
 

@@ -3,6 +3,7 @@ import { mount } from "@vue/test-utils";
 import { isReactive, nextTick, reactive } from "vue";
 import WidgetFrame from "../src/widgets/WidgetFrame.vue";
 import type { Widget } from "../src/api/types";
+import "../src/theme/tokens.css";
 
 function fakeWidget(): Widget {
   return {
@@ -89,6 +90,28 @@ describe("WidgetFrame reactivity", () => {
     const afterSrc = iframe.getAttribute("srcdoc") || "";
     expect(afterSrc).not.toBe(initialSrc);
     expect(afterSrc).toContain("different");
+  });
+
+  it("rebuilds srcdoc when the host theme changes", async () => {
+    document.documentElement.classList.remove("dark", "light");
+    document.documentElement.style.setProperty("--paper", "#ffffff");
+    document.documentElement.style.setProperty("--ink", "#0b0d10");
+    const wrapper = mount(WidgetFrame, {
+      props: { widget: fakeWidget(), placementId: "p-theme", bootProps: {}, role: "preview" },
+    });
+    await nextTick();
+    const before = wrapper.find("iframe").attributes("srcdoc") || "";
+
+    document.documentElement.classList.add("dark");
+    document.documentElement.style.setProperty("--paper", "#0d0e10");
+    document.documentElement.style.setProperty("--ink", "#f2efe8");
+    window.dispatchEvent(new CustomEvent("slaides:theme-changed"));
+    await nextTick();
+
+    const after = wrapper.find("iframe").attributes("srcdoc") || "";
+    expect(after).not.toBe(before);
+    expect(after).toContain("--background: #0d0e10");
+    document.documentElement.removeAttribute("style");
   });
 
   it("iframe sandbox grants allow-forms so submit handlers can preventDefault without the browser warning", () => {

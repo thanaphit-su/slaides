@@ -149,7 +149,11 @@ input, textarea, select { font-family: inherit; }
 .btn-primary {
   background: var(--ink); color: var(--paper); border-color: var(--ink);
 }
-.btn-primary:hover { background: #1f2429; }
+.btn-primary:hover {
+  background: var(--ink-soft);
+  color: var(--paper);
+  border-color: var(--ink-soft);
+}
 .btn-accent {
   background: var(--accent); color: #fff; border-color: var(--accent);
 }

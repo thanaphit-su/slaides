@@ -38,9 +38,9 @@ const emit = defineEmits<{ (e: "update:modelValue", v: boolean): void }>();
           width: '16px',
           height: '16px',
           borderRadius: '50%',
-          background: '#fff',
+          background: 'var(--paper)',
           transition: 'left .15s ease',
-          boxShadow: '0 1px 2px rgba(0,0,0,.2)',
+          boxShadow: 'var(--shadow-1)',
         }"
       />
     </span>

@@ -15,7 +15,7 @@ defineEmits<{
       padding: '22px 24px',
       borderRadius: 'var(--r-lg)',
       border: '1.5px dashed ' + (visible ? 'var(--accent)' : 'var(--rule-strong)'),
-      background: visible ? 'rgba(31,58,138,.05)' : 'transparent',
+      background: visible ? 'var(--accent-soft)' : 'transparent',
       transition: 'border-color .2s ease, background .2s ease',
       display: 'flex',
       flexDirection: 'column',
