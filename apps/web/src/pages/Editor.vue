@@ -33,7 +33,7 @@ const hoverTop = ref(false);
 const hoverBottom = ref(false);
 const toast = ref<string | null>(null);
 const drawerOpen = ref(false);
-const drawerTab = ref<"library" | "generate" | "code">("library");
+const drawerTab = ref<"library" | "generate" | "code" | "note">("library");
 const widgetSidebarMode = ref<"create" | "adjust">("create");
 const settingsOpen = ref(false);
 const widgetRev = ref(0);
@@ -550,6 +550,12 @@ async function patchPlacementPropsForWidget(
   showToast(opts.resetState ? "Saved — audience tally reset." : "Properties saved.");
 }
 
+async function patchSlideNotesForWidget(notes: string | null): Promise<void> {
+  if (!activeSlide.value) return;
+  await editor.patchSlideNotes(activeSlide.value.id, notes);
+  showToast("Notes saved.");
+}
+
 async function onWidgetDeleted(widgetId: string) {
   widgetsStore.invalidate(widgetId);
   // Reload the deck so any slides that referenced this widget refresh their
@@ -917,7 +923,7 @@ function onDeleteSlideById(id: string) {
                     :title="editorMode === 'rendered' ? 'Edit as Markdown' : 'Back to rendered view'"
                     @click="setEditorMode(editorMode === 'rendered' ? 'markdown' : 'rendered')"
                   >
-                    <Icon :name="editorMode === 'rendered' ? 'md' : 'eye'" :size="16" />
+                    <Icon :name="editorMode === 'rendered' ? 'pen' : 'eye'" :size="16" />
                   </button>
                 </div>
                 <SlideCanvas
@@ -1016,7 +1022,9 @@ function onDeleteSlideById(id: string) {
           :placement="activePlacement"
           :deck-id="editor.deck?.id ?? null"
           :slide-number="activeSlideIndex >= 0 ? activeSlideIndex + 1 : null"
+          :slide-notes="activeSlide?.presenter_notes ?? null"
           :on-patch-placement-props="patchPlacementPropsForWidget"
+          :on-patch-slide-notes="patchSlideNotesForWidget"
           @pick="onPickWidget"
           @close="drawerOpen = false"
           @deleted="onWidgetDeleted"

@@ -8,6 +8,7 @@ async def test_create_and_list_deck(client, auth_headers):
     assert deck["title"] == "My deck"
     assert len(deck["slides"]) == 1
     assert deck["slides"][0]["position"] == 0
+    assert deck["slides"][0]["presenter_notes"] is None
 
     listed = await client.get("/api/v1/decks", headers=auth_headers)
     assert listed.status_code == 200
@@ -193,6 +194,26 @@ async def test_slide_update_does_not_split(client, auth_headers):
     assert len(full.json()["slides"]) == 1
 
 
+async def test_patch_slide_presenter_notes(client, auth_headers):
+    create = await client.post("/api/v1/decks", json={"title": "Notes"}, headers=auth_headers)
+    deck = create.json()
+    deck_id = deck["id"]
+    slide_id = deck["slides"][0]["id"]
+
+    patched = await client.patch(
+        f"/api/v1/decks/{deck_id}/slides/{slide_id}/notes",
+        json={"presenter_notes": "Ask the room about rollout risk.\nPause after chart."},
+        headers=auth_headers,
+    )
+    assert patched.status_code == 200, patched.text
+    body = patched.json()
+    assert body["presenter_notes"] == "Ask the room about rollout risk.\nPause after chart."
+    assert body["markdown"] == "# Untitled\n"
+
+    full = await client.get(f"/api/v1/decks/{deck_id}", headers=auth_headers)
+    assert full.json()["slides"][0]["presenter_notes"] == "Ask the room about rollout risk.\nPause after chart."
+
+
 async def test_create_and_delete_slide(client, auth_headers):
     create = await client.post("/api/v1/decks", json={"title": "Slides"}, headers=auth_headers)
     deck = create.json()
@@ -229,6 +250,11 @@ async def test_export_then_import_round_trip(client, auth_headers):
         json={"markdown": "# Hello *world*\n\nA paragraph.\n", "kicker": "Intro"},
         headers=auth_headers,
     )
+    await client.patch(
+        f"/api/v1/decks/{deck_id}/slides/{slide_id}/notes",
+        json={"presenter_notes": "Open with the customer story."},
+        headers=auth_headers,
+    )
 
     export = await client.post(f"/api/v1/decks/{deck_id}/export", headers=auth_headers)
     assert export.status_code == 200
@@ -245,6 +271,7 @@ async def test_export_then_import_round_trip(client, auth_headers):
     assert new_deck["title"] == "Round trip"
     assert any("Hello *world*" in s["markdown"] for s in new_deck["slides"])
     assert new_deck["slides"][0]["kicker"] == "Intro"
+    assert new_deck["slides"][0]["presenter_notes"] == "Open with the customer story."
 
 
 async def test_package_v02_preserves_section_and_widget_metadata():

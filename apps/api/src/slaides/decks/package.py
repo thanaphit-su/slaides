@@ -14,6 +14,7 @@ class PackagedSlide:
     markdown: str
     key: str | None = None
     section_key: str | None = None
+    presenter_notes: str | None = None
 
 
 @dataclass
@@ -102,6 +103,7 @@ def pack(packed: Packaged) -> bytes:
                     "position": s.position,
                     "section_key": s.section_key,
                     "kicker": s.kicker,
+                    "presenter_notes": s.presenter_notes,
                 }
             )
             body = ""
@@ -158,6 +160,7 @@ def unpack(data: bytes) -> Packaged:
                         section_key=s.get("section_key"),
                         kicker=s.get("kicker") if s.get("kicker") is not None else file_kicker,
                         markdown=body,
+                        presenter_notes=s.get("presenter_notes"),
                     )
                 )
             return Packaged(
@@ -181,7 +184,15 @@ def unpack(data: bytes) -> Packaged:
         for idx, name in enumerate(slide_entries):
             raw = zf.read(name).decode("utf-8")
             kicker, body = _extract_kicker(raw)
-            slides.append(PackagedSlide(key=f"slide-{idx}", position=idx, kicker=kicker, markdown=body))
+            slides.append(
+                PackagedSlide(
+                    key=f"slide-{idx}",
+                    position=idx,
+                    kicker=kicker,
+                    markdown=body,
+                    presenter_notes=None,
+                )
+            )
         sections_raw = manifest.get("sections") or []
         sections = [
             PackagedSection(

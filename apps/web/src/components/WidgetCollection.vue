@@ -15,12 +15,15 @@ import { validateDraftJs } from "@/widgets/draft-js";
 import { extractPreviewFields, sanitizeStreamingHtml, type StreamingPreviewFields } from "@/widgets/streaming-parser";
 import type { SlideWidgetEmbed, Widget, WidgetAiMessage, WidgetAiThread, WidgetSummary, Workspace } from "@/api/types";
 
+type WidgetPanelTab = "library" | "generate" | "props" | "code" | "note";
+
 const props = defineProps<{
   disabled?: boolean;
   disabledReason?: string;
-  initialTab?: "library" | "generate" | "props" | "code";
+  initialTab?: WidgetPanelTab;
   mode?: "create" | "adjust";
   placement?: SlideWidgetEmbed | null;
+  slideNotes?: string | null;
   /** Widgets v2 — widgets are deck-local. The library popover lists widgets
    * in this deck only; the cross-deck picker reads from the workspace-wide
    * list. */
@@ -40,6 +43,7 @@ const props = defineProps<{
     payload: { placement_id: string; props: Record<string, unknown> },
     opts: { resetState?: boolean },
   ) => Promise<void>;
+  onPatchSlideNotes?: (notes: string | null) => Promise<void>;
 }>();
 const emit = defineEmits<{
   (e: "pick", widget: WidgetSummary): void;
@@ -51,7 +55,7 @@ const emit = defineEmits<{
 }>();
 
 const widgets = useWidgetsStore();
-const tab = ref<"library" | "generate" | "props" | "code">(props.initialTab || "library");
+const tab = ref<WidgetPanelTab>(props.initialTab || "library");
 const codeTab = ref<"html" | "js" | "css">("html");
 const query = ref("");
 const composer = ref("");
@@ -83,6 +87,10 @@ const propsDraft = ref<Record<string, unknown>>({});
 const savingProps = ref(false);
 const propsError = ref<string | null>(null);
 const propsSaved = ref<string | null>(null);
+const noteDraft = ref(props.slideNotes || "");
+const savingNotes = ref(false);
+const notesError = ref<string | null>(null);
+const notesSaved = ref<string | null>(null);
 // Copy-from-another-deck picker state. The widgets.crossDeck list comes from
 // the workspace-wide endpoint and includes the current deck's widgets too;
 // the candidate computed below filters this deck out.
@@ -251,11 +259,15 @@ const hasProps = computed(() => {
   const properties = (schema.properties as Record<string, unknown> | undefined) || schema;
   return properties && typeof properties === "object" && Object.keys(properties).length > 0;
 });
-// Library is a popover now — only Generate/Props/Code are tab navigation.
-// In create mode there's no tab strip at all (Generate is implicit).
-const availableTabs = computed<Array<"library" | "generate" | "props" | "code">>(() => {
-  if (!props.placement) return ["generate"];
-  return hasProps.value ? ["generate", "props", "code"] : ["generate", "code"];
+// Library is a popover now — Generate/Props/Code/Note are tab navigation.
+// Props and Code remain placement-specific; Note belongs to the active slide.
+const notesEnabled = computed(() => props.slideNotes !== undefined || !!props.onPatchSlideNotes);
+const availableTabs = computed<WidgetPanelTab[]>(() => {
+  const tabs: WidgetPanelTab[] = ["generate"];
+  if (props.placement && hasProps.value) tabs.push("props");
+  if (props.placement) tabs.push("code");
+  if (notesEnabled.value) tabs.push("note");
+  return tabs;
 });
 const widgetGenerationDisabled = computed(
   () => workspace.value !== null && !workspace.value.llm_capability_models?.widget_generate,
@@ -294,6 +306,7 @@ const propsSchema = computed<Record<string, unknown>>(() => {
 const propsDirty = computed(() => {
   return JSON.stringify(propsDraft.value) !== JSON.stringify(props.placement?.props || {});
 });
+const notesDirty = computed(() => noteDraft.value !== (props.slideNotes || ""));
 const composerPlaceholder = computed(() => {
   if (adjusting.value) return "Iterate on this widget…";
   return messages.value.some((m) => m.role === "user") ? "Iterate on this widget…" : "Ask for a widget…";
@@ -440,6 +453,16 @@ watch(
     propsSaved.value = null;
   },
   { immediate: true, deep: true },
+);
+
+watch(
+  () => props.slideNotes,
+  (notes) => {
+    noteDraft.value = notes || "";
+    notesError.value = null;
+    notesSaved.value = null;
+  },
+  { immediate: true },
 );
 
 watch(
@@ -1009,10 +1032,11 @@ function removeAttachedImage(id: string) {
   attachedImages.value = attachedImages.value.filter((image) => image.id !== id);
 }
 
-function tabLabel(t: "library" | "generate" | "props" | "code"): string {
+function tabLabel(t: WidgetPanelTab): string {
   if (t === "library") return "My library";
   if (t === "code") return "Code";
   if (t === "props") return "Props";
+  if (t === "note") return "Note";
   return adjusting.value ? "AI Adjust" : "Generate with AI";
 }
 
@@ -1540,6 +1564,21 @@ async function savePlacementProps() {
   }
 }
 
+async function saveSlideNotes() {
+  if (savingNotes.value || !notesDirty.value || !props.onPatchSlideNotes) return;
+  savingNotes.value = true;
+  notesError.value = null;
+  notesSaved.value = null;
+  try {
+    await props.onPatchSlideNotes(noteDraft.value.length ? noteDraft.value : null);
+    notesSaved.value = "Saved";
+  } catch (err) {
+    notesError.value = err instanceof Error ? err.message : "Could not save notes.";
+  } finally {
+    savingNotes.value = false;
+  }
+}
+
 async function persistDraft(insert: boolean, draft: Partial<Widget>, sourceMessageId: string) {
   savingMessageId.value = sourceMessageId;
   error.value = null;
@@ -1677,10 +1716,11 @@ async function doDelete(force: boolean) {
       </button>
     </header>
 
-    <div v-if="adjusting && availableTabs.length > 1" class="widget-tab-strip">
+    <div v-if="availableTabs.length > 1" class="widget-tab-strip">
       <button
         v-for="t in availableTabs"
         :key="t"
+        :data-testid="`widget-tab-${t}`"
         @click="tab = t"
         :class="{ active: tab === t }"
       >
@@ -1688,7 +1728,7 @@ async function doDelete(force: boolean) {
       </button>
     </div>
 
-    <div v-if="tab !== 'code' && ((props.disabled && !adjusting) || widgetGenerationDisabled)" :style="{
+    <div v-if="tab === 'generate' && ((props.disabled && !adjusting) || widgetGenerationDisabled)" :style="{
       margin: '12px 18px',
       padding: '12px 14px',
       border: '1px dashed var(--rule-strong)',
@@ -2196,6 +2236,37 @@ async function doDelete(force: boolean) {
       </div>
     </div>
 
+    <div v-else-if="tab === 'note'" class="widget-note-panel">
+      <div class="widget-note-topbar">
+        <div>
+          <div class="t-kicker">Presenter note</div>
+          <div class="widget-note-title">Slide {{ slideLabel || "notes" }}</div>
+        </div>
+      </div>
+      <textarea
+        v-model="noteDraft"
+        class="widget-note-body"
+        data-testid="slide-notes-input"
+        spellcheck="true"
+        placeholder="Add private speaker notes for this slide..."
+      />
+      <footer class="widget-note-footer">
+        <span v-if="notesError" class="widget-note-status error">{{ notesError }}</span>
+        <span v-else-if="notesSaved" class="widget-note-status">{{ notesSaved }}</span>
+        <span v-else-if="notesDirty" class="widget-note-status">Unsaved changes</span>
+        <span v-else class="widget-note-status">No changes</span>
+        <button
+          class="btn btn-primary btn-sm"
+          data-testid="slide-notes-save"
+          type="button"
+          :disabled="savingNotes || !notesDirty || !props.onPatchSlideNotes"
+          @click="saveSlideNotes"
+        >
+          {{ savingNotes ? "Saving..." : "Save" }}
+        </button>
+      </footer>
+    </div>
+
     <div v-else class="widget-code-panel">
       <div class="widget-code-topbar">
         <div>
@@ -2404,6 +2475,71 @@ async function doDelete(force: boolean) {
   padding: 10px 18px;
   border-top: 1px solid var(--rule-soft);
   background: var(--paper);
+}
+
+.widget-note-panel {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.widget-note-topbar {
+  padding: 10px 18px 12px;
+  border-bottom: 1px solid var(--rule-soft);
+}
+
+.widget-note-title {
+  margin-top: 3px;
+  font-family: var(--serif);
+  font-size: 18px;
+  letter-spacing: -0.01em;
+}
+
+.widget-note-body {
+  flex: 1;
+  min-height: 0;
+  margin: 0;
+  overflow: auto;
+  padding: 16px 18px;
+  background: var(--paper-2);
+  color: var(--ink);
+  font-family: var(--sans);
+  font-size: 14px;
+  line-height: 1.55;
+  border: 0;
+  border-radius: 0;
+  resize: none;
+  outline: none;
+}
+
+.widget-note-body:focus {
+  box-shadow: inset 0 0 0 1px var(--accent);
+}
+
+.widget-note-footer {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px 18px;
+  border-top: 1px solid var(--rule);
+  background: var(--paper);
+}
+
+.widget-note-status {
+  min-width: 0;
+  color: var(--ink-soft);
+  font-family: var(--mono);
+  font-size: 11px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.widget-note-status.error {
+  color: var(--err);
 }
 
 .widget-code-panel {

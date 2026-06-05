@@ -121,4 +121,23 @@ describe("WidgetCollection — preview-mode selection chip", () => {
     // Sending also clears the chip.
     expect(wrapper.emitted("clear-selected-target")).toBeTruthy();
   });
+
+  it("renders a Note tab and saves slide presenter notes", async () => {
+    const saveNotes = vi.fn(async () => {});
+    const wrapper = mount(WidgetCollection, {
+      props: {
+        initialTab: "note",
+        slideNotes: "Opening cue",
+        onPatchSlideNotes: saveNotes,
+      },
+    });
+
+    expect(wrapper.find('[data-testid="widget-tab-note"]').exists()).toBe(true);
+    expect((wrapper.find('[data-testid="slide-notes-input"]').element as HTMLTextAreaElement).value).toBe("Opening cue");
+
+    await wrapper.find('[data-testid="slide-notes-input"]').setValue("Updated cue");
+    await wrapper.find('[data-testid="slide-notes-save"]').trigger("click");
+
+    expect(saveNotes).toHaveBeenCalledWith("Updated cue");
+  });
 });

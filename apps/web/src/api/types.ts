@@ -37,6 +37,7 @@ export interface Slide {
   position: number;
   kicker: string | null;
   markdown: string;
+  presenter_notes?: string | null;
   updated_at: string;
   widgets: SlideWidgetEmbed[];
 }

@@ -1,7 +1,9 @@
 <script setup lang="ts">
 import type { SessionQuestion } from "@/api/types";
 
-defineProps<{ questions: SessionQuestion[] }>();
+withDefaults(defineProps<{ questions: SessionQuestion[]; embedded?: boolean }>(), {
+  embedded: false,
+});
 const emit = defineEmits<{ (e: "answer", id: string): void }>();
 
 function relTime(ts: string): string {
@@ -14,9 +16,10 @@ function relTime(ts: string): string {
 
 <template>
   <aside
+    :class="{ embedded }"
     :style="{
-      width: '360px',
-      borderLeft: '1px solid var(--rule)',
+      width: embedded ? 'auto' : '360px',
+      borderLeft: embedded ? '0' : '1px solid var(--rule)',
       background: 'var(--paper-2)',
       overflowY: 'auto',
       padding: '20px 16px',

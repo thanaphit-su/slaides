@@ -21,6 +21,7 @@ from .schemas import (
     SectionReorder,
     SlideCreate,
     SlideMutationResult,
+    SlideNotesUpdate,
     SlideOut,
     SlideReorder,
     SlideUpdate,
@@ -209,6 +210,7 @@ async def duplicate_deck(
                 position=sl.position,
                 kicker=sl.kicker,
                 markdown=sl.markdown,
+                presenter_notes=sl.presenter_notes,
             )
         )
     await session.flush()
@@ -248,6 +250,26 @@ async def update_slide(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="slide not found")
     affected = await service.replace_slide_markdown(session, slide, body.markdown, body.kicker)
     return SlideMutationResult(slides=await _slides_out_with_widgets(session, affected))
+
+
+@router.patch("/{deck_id}/slides/{slide_id}/notes", response_model=SlideOut)
+async def update_slide_notes(
+    deck_id: uuid.UUID,
+    slide_id: uuid.UUID,
+    body: SlideNotesUpdate,
+    user: AppUser = Depends(current_user),
+    session: AsyncSession = Depends(db_session),
+) -> SlideOut:
+    deck = await _load_deck(session, user, deck_id)
+    slide = (
+        await session.execute(select(Slide).where(Slide.id == slide_id, Slide.deck_id == deck.id))
+    ).scalar_one_or_none()
+    if slide is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="slide not found")
+    slide.presenter_notes = body.presenter_notes
+    await session.flush()
+    await session.refresh(slide)
+    return (await _slides_out_with_widgets(session, [slide]))[0]
 
 
 async def _load_section(
@@ -427,6 +449,7 @@ async def export_deck(
                 section_key=section_key_by_id.get(s.section_id) if s.section_id else None,
                 kicker=s.kicker,
                 markdown=s.markdown,
+                presenter_notes=s.presenter_notes,
             )
             for s in slides
         ],
@@ -524,6 +547,7 @@ async def import_deck(
             position=s.position,
             kicker=s.kicker,
             markdown=s.markdown,
+            presenter_notes=s.presenter_notes,
         )
         slide_by_key[key] = slide
         session.add(slide)

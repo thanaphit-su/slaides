@@ -37,4 +37,21 @@ describe("decksApi", () => {
       section_id: "section-1",
     });
   });
+
+  it("patches slide presenter notes without sending markdown", async () => {
+    const fetchMock = vi.fn(async (_url: RequestInfo | URL, _init?: RequestInit) => {
+      return new Response(JSON.stringify(slide({ presenter_notes: "Speaker cue" })), { status: 200 });
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    await decksApi.updateSlideNotes("deck-1", "slide-1", "Speaker cue");
+
+    expect(fetchMock).toHaveBeenCalledOnce();
+    const [url, init] = fetchMock.mock.calls[0];
+    expect(String(url)).toContain("/decks/deck-1/slides/slide-1/notes");
+    expect(init?.method).toBe("PATCH");
+    expect(JSON.parse(String(init?.body))).toEqual({
+      presenter_notes: "Speaker cue",
+    });
+  });
 });

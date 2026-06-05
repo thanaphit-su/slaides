@@ -8,6 +8,7 @@ vi.mock("@/api/decks", () => ({
   decksApi: {
     get: vi.fn(),
     insertSlide: vi.fn(),
+    updateSlideNotes: vi.fn(),
   },
   sectionsApi: {
     create: vi.fn(),
@@ -33,6 +34,7 @@ function slide(overrides: Partial<Slide>): Slide {
     kicker: null,
     markdown: "",
     updated_at: "2026-05-20T00:00:00Z",
+    presenter_notes: null,
     widgets: [],
     ...overrides,
   };
@@ -65,6 +67,7 @@ describe("editor store section slide insertion", () => {
     setActivePinia(createPinia());
     vi.mocked(decksApi.get).mockReset();
     vi.mocked(decksApi.insertSlide).mockReset();
+    vi.mocked(decksApi.updateSlideNotes).mockReset();
   });
 
   it("inserts a slide into an empty section before the next section's slides", async () => {
@@ -88,5 +91,24 @@ describe("editor store section slide insertion", () => {
     expect(decksApi.insertSlide).toHaveBeenCalledWith("deck-1", 1, "", "section-b");
     expect(store.activeSlideId).toBe("slide-b");
     expect(store.deck?.slides.map((s) => s.id)).toEqual(["slide-a", "slide-b", "slide-c"]);
+  });
+
+  it("patches slide presenter notes and updates the active slide", async () => {
+    const store = useEditorStore();
+    store.deck = deck({
+      slides: [slide({ id: "slide-a", presenter_notes: null })],
+    });
+    vi.mocked(decksApi.updateSlideNotes).mockResolvedValue(
+      slide({ id: "slide-a", presenter_notes: "Slow down on the demo." }),
+    );
+
+    await store.patchSlideNotes("slide-a", "Slow down on the demo.");
+
+    expect(decksApi.updateSlideNotes).toHaveBeenCalledWith(
+      "deck-1",
+      "slide-a",
+      "Slow down on the demo.",
+    );
+    expect(store.deck?.slides[0].presenter_notes).toBe("Slow down on the demo.");
   });
 });

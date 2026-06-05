@@ -54,6 +54,16 @@ export const useEditorStore = defineStore("editor", () => {
     }
   }
 
+  async function patchSlideNotes(slideId: string, presenterNotes: string | null): Promise<void> {
+    if (!deck.value) return;
+    const updated = await decksApi.updateSlideNotes(deck.value.id, slideId, presenterNotes);
+    const slide = deck.value.slides.find((s) => s.id === slideId);
+    if (slide) {
+      slide.presenter_notes = updated.presenter_notes;
+      slide.updated_at = updated.updated_at;
+    }
+  }
+
   function mergeSlides(originalId: string, returned: Slide[]) {
     if (!deck.value) return;
     const originalIdx = deck.value.slides.findIndex((s) => s.id === originalId);
@@ -272,6 +282,7 @@ export const useEditorStore = defineStore("editor", () => {
     patchTitle,
     queueSlideUpdate,
     flushSlide,
+    patchSlideNotes,
     insertSlideAt,
     insertSlideInSection,
     deleteSlide,

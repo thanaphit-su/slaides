@@ -7,7 +7,7 @@ import { useWidgetsStore } from "@/stores/widgets";
 import Wordmark from "@/components/Wordmark.vue";
 import Icon from "@/components/Icon.vue";
 import SlideStage from "@/components/SlideStage.vue";
-import QuestionsRail from "@/components/QuestionsRail.vue";
+import PresenterRail from "@/components/PresenterRail.vue";
 import OpenInteractionFab from "@/components/OpenInteractionFab.vue";
 import LiveInteractionSheet from "@/components/LiveInteractionSheet.vue";
 import LivePollSlide from "@/components/LivePollSlide.vue";
@@ -442,8 +442,9 @@ watch(
         v-if="currentSessionSlide && currentSpecType === 'question'"
         :slide="currentSessionSlide"
       />
-      <QuestionsRail
+      <PresenterRail
         v-else-if="railOpen"
+        :notes="currentDeckSlide?.presenter_notes ?? null"
         :questions="session.snapshot?.questions || []"
         @answer="(id) => session.markAnswered(id)"
       />

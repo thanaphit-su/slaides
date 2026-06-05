@@ -39,6 +39,7 @@ class SlideOut(BaseModel):
     position: int
     kicker: str | None
     markdown: str
+    presenter_notes: str | None = None
     updated_at: datetime
     widgets: list[SlideWidgetEmbed] = []
 
@@ -123,6 +124,10 @@ class SlideCreate(BaseModel):
 class SlideUpdate(BaseModel):
     markdown: str
     kicker: str | None = None
+
+
+class SlideNotesUpdate(BaseModel):
+    presenter_notes: str | None = None
 
 
 class SlideMutationResult(BaseModel):

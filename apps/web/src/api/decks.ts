@@ -41,6 +41,11 @@ export const decksApi = {
       method: "PUT",
       body: { markdown, kicker },
     }),
+  updateSlideNotes: (deckId: string, slideId: string, presenterNotes: string | null) =>
+    api<Slide>(`/decks/${deckId}/slides/${slideId}/notes`, {
+      method: "PATCH",
+      body: { presenter_notes: presenterNotes },
+    }),
   deleteSlide: (deckId: string, slideId: string) =>
     api<void>(`/decks/${deckId}/slides/${slideId}`, { method: "DELETE" }),
   reorderSlides: (deckId: string, order: { id: string; section_id: string | null }[]) =>
