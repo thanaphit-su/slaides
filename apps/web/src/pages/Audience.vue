@@ -178,6 +178,39 @@ const currentSpecType = computed(() => {
   return typeof t === "string" ? t : null;
 });
 
+const audiencePaginationItems = computed(() => {
+  const slides = session.audiencePassedSlides;
+  const total = slides.length;
+  const active = session.audienceStepIndex;
+  if (total <= 7 || active < 0) {
+    return slides.map((slide, index) => ({ slide, index }));
+  }
+
+  const windowSize = 7;
+  const radius = Math.floor(windowSize / 2);
+  let start = Math.max(0, active - radius);
+  let end = Math.min(total - 1, start + windowSize - 1);
+  if (end - start + 1 < windowSize) {
+    start = Math.max(0, end - windowSize + 1);
+  }
+
+  const items: Array<{ slide: (typeof slides)[number]; index: number }> = [];
+  for (let index = start; index <= end; index += 1) {
+    items.push({ slide: slides[index], index });
+  }
+  return items;
+});
+
+const audiencePaginationHasHiddenBefore = computed(() => {
+  const first = audiencePaginationItems.value[0];
+  return !!first && first.index > 0;
+});
+
+const audiencePaginationHasHiddenAfter = computed(() => {
+  const last = audiencePaginationItems.value[audiencePaginationItems.value.length - 1];
+  return !!last && last.index < session.audiencePassedSlides.length - 1;
+});
+
 function exitToJoin() {
   clearGuestToken(props.sessionId);
   router.replace(exitDestination());
@@ -336,17 +369,38 @@ function showToast(message: string) {
       </button>
 
       <div class="audience-step-center" aria-label="Slide history controls">
-        <div class="audience-step-dots">
-          <button
-            v-for="(slide, i) in session.audiencePassedSlides"
-            :key="slide.id"
-            type="button"
-            data-testid="audience-step-dot"
-            :title="`Slide ${i + 1}`"
-            :aria-label="`Go to slide ${i + 1}`"
-            :class="{ active: i === session.audienceStepIndex }"
-            @click="session.goToAudienceSlide(slide.id)"
+        <div
+          class="audience-step-window"
+          data-testid="audience-step-window"
+          :class="{
+            'has-fade-left': audiencePaginationHasHiddenBefore,
+            'has-fade-right': audiencePaginationHasHiddenAfter,
+          }"
+        >
+          <span
+            v-if="audiencePaginationHasHiddenBefore"
+            class="audience-step-fade audience-step-fade-left"
+            data-testid="audience-step-fade-left"
+            aria-hidden="true"
           />
+          <span
+            v-if="audiencePaginationHasHiddenAfter"
+            class="audience-step-fade audience-step-fade-right"
+            data-testid="audience-step-fade-right"
+            aria-hidden="true"
+          />
+          <div class="audience-step-dots">
+            <button
+              v-for="item in audiencePaginationItems"
+              :key="item.slide.id"
+              type="button"
+              data-testid="audience-step-dot"
+              :title="`Slide ${item.index + 1}`"
+              :aria-label="`Go to slide ${item.index + 1}`"
+              :class="{ active: item.index === session.audienceStepIndex }"
+              @click="session.goToAudienceSlide(item.slide.id)"
+            />
+          </div>
         </div>
         <span class="audience-step-status" data-testid="audience-step-status">
           {{ audienceStepPosition }} / {{ audienceStepTotal }}<template v-if="showDeckTotal"> · {{ deckTotal }} total</template>
@@ -446,6 +500,39 @@ function showToast(message: string) {
   display: inline-flex;
   align-items: center;
   gap: 14px;
+  min-width: 0;
+}
+
+.audience-step-window {
+  position: relative;
+  overflow: hidden;
+}
+
+.audience-step-window.has-fade-left .audience-step-dots {
+  padding-left: 8px;
+}
+
+.audience-step-window.has-fade-right .audience-step-dots {
+  padding-right: 8px;
+}
+
+.audience-step-fade {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 18px;
+  z-index: 1;
+  pointer-events: none;
+}
+
+.audience-step-fade-left {
+  left: 0;
+  background: linear-gradient(90deg, var(--paper), transparent);
+}
+
+.audience-step-fade-right {
+  right: 0;
+  background: linear-gradient(270deg, var(--paper), transparent);
 }
 
 .audience-step-dots {
@@ -455,17 +542,20 @@ function showToast(message: string) {
 }
 
 .audience-step-dots button {
-  width: 8px;
-  height: 8px;
+  width: 7px;
+  height: 7px;
+  flex: 0 0 auto;
   border: none;
   border-radius: 50%;
   padding: 0;
   background: var(--rule-strong);
   cursor: pointer;
-  transition: background 0.15s ease;
+  transition: background 0.15s ease, width 0.15s ease, height 0.15s ease;
 }
 
 .audience-step-dots button.active {
+  width: 9px;
+  height: 9px;
   background: var(--ink);
 }
 

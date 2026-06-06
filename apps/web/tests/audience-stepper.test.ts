@@ -214,6 +214,47 @@ describe("audience slide stepper", () => {
     expect(wrapper.get('[data-testid="audience-slide"]').text()).toBe("slide-2");
   });
 
+  it("compacts audience history dots with a fade for large passed slide sets", async () => {
+    const manySlides = structuredClone(snapshot);
+    manySlides.slides = Array.from({ length: 46 }, (_, index) => ({
+      id: `slide-${index + 1}`,
+      deck_id: "deck-1",
+      section_id: null,
+      position: index,
+      kicker: null,
+      markdown: `# Slide ${index + 1}`,
+      updated_at: new Date().toISOString(),
+      widgets: [],
+    }));
+    manySlides.current_slide_id = "slide-12";
+    vi.mocked(sessionsApi.audienceSnapshot).mockResolvedValueOnce(manySlides);
+    const wrapper = mount(Audience, {
+      props: { sessionId: "sess-1" },
+      global: {
+        stubs: {
+          Wordmark: true,
+          Icon: true,
+          RaiseQuestionSheet: true,
+          LivePollSlide: true,
+          LiveQuestionSlide: true,
+          LiveRandomAudienceSlide: true,
+          SlideStage: {
+            props: ["slide"],
+            template: '<div data-testid="audience-slide">{{ slide.id }}</div>',
+          },
+        },
+      },
+    });
+    await flushPromises();
+
+    const window = wrapper.get('[data-testid="audience-step-window"]');
+    expect(window.findAll('[data-testid="audience-step-dot"]').length).toBeLessThanOrEqual(7);
+    expect(window.find('[data-testid="audience-step-fade-left"]').exists()).toBe(true);
+    expect(window.find('[data-testid="audience-step-fade-right"]').exists()).toBe(false);
+    expect(wrapper.get('[data-testid="audience-step-status"]').text()).toContain("12 / 12");
+    expect(wrapper.get('[data-testid="audience-step-status"]').text()).toContain("46 total");
+  });
+
   it("returns signed-in audience members to workspace when they leave", async () => {
     const auth = useAuthStore();
     auth.access = "access";
