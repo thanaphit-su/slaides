@@ -134,12 +134,21 @@ function signOut() {
         <Wordmark :size="12" />
         <span class="t-meta">·</span>
         <span class="mirror-title">{{ session.snapshot?.deck_title || "Mirror" }}</span>
-      </div>
-      <div class="mirror-actions">
         <span class="mirror-status" :class="{ live: session.connected && !endedState && !denied }">
-          <Icon name="eye" :size="13" />
+          <Icon 
+          v-if="statusLabel == 'Live'"
+          name="eye" 
+          :size="13" 
+          />
+          <Icon
+          v-else
+          name="eye_closed" 
+          :size="13" 
+          />
           {{ statusLabel }}
         </span>
+      </div>
+      <div class="mirror-actions">
         <AccountMenu
           :user-name="auth.user?.display_name"
           :user-email="auth.user?.email"
@@ -209,7 +218,7 @@ function signOut() {
 .mirror-status {
   display: inline-flex;
   align-items: center;
-  gap: 8px;
+  gap: 14px;
   min-width: 0;
 }
 
@@ -236,8 +245,13 @@ function signOut() {
 }
 
 .mirror-status.live {
-  border-color: var(--live);
-  color: var(--live);
+  font-size: 11px; 
+  font-weight: 700; 
+  gap: 8px;
+  border-radius: var(--r-xs);
+  color: #fff;
+  background-color: var(--live);
+  text-transform: uppercase;
 }
 
 .mirror-main {
