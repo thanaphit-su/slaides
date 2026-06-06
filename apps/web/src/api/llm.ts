@@ -7,6 +7,7 @@ interface CompleteBody {
   context?: Record<string, unknown>;
   model_override?: string;
   images?: Array<{ data_url: string; name?: string | null; mime_type?: string | null }>;
+  files?: Array<{ content: string; name?: string | null; mime_type?: string | null }>;
 }
 
 type CompleteOptions = {
