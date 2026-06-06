@@ -5,6 +5,7 @@ import { createMemoryHistory, createRouter } from "vue-router";
 import Mirror from "../src/pages/Mirror.vue";
 import { sessionsApi } from "../src/api/sessions";
 import { widgetsApi } from "../src/api/widgets";
+import { THEME_MODE_STORAGE_KEY } from "../src/theme/useThemeMode";
 import type { MirrorSessionSnapshot } from "../src/api/types";
 
 class MockWebSocket {
@@ -52,6 +53,8 @@ describe("Mirror page", () => {
 
   beforeEach(() => {
     setActivePinia(createPinia());
+    localStorage.clear();
+    document.documentElement.classList.remove("dark", "light");
     originalWS = globalThis.WebSocket;
     // @ts-expect-error mock
     globalThis.WebSocket = MockWebSocket;
@@ -63,6 +66,8 @@ describe("Mirror page", () => {
   afterEach(() => {
     globalThis.WebSocket = originalWS;
     vi.restoreAllMocks();
+    localStorage.clear();
+    document.documentElement.classList.remove("dark", "light");
   });
 
   it("renders the current slide without audience or presenter controls", async () => {
@@ -100,6 +105,42 @@ describe("Mirror page", () => {
     expect(wrapper.find('[data-testid="audience-stepper"]').exists()).toBe(false);
     expect(wrapper.find('[data-testid="audience-raise-question-fab"]').exists()).toBe(false);
     expect(wrapper.text()).not.toContain("Presenter controls");
+  });
+
+  it("exposes the shared theme switch from the avatar menu", async () => {
+    const router = createRouter({
+      history: createMemoryHistory(),
+      routes: [
+        { path: "/mirror/:sessionId", name: "mirror", component: Mirror, props: true },
+        { path: "/signin", name: "signin", component: { template: "<div />" } },
+      ],
+    });
+    await router.push("/mirror/sess-1?token=mirror-token");
+    await router.isReady();
+
+    const wrapper = mount(Mirror, {
+      props: { sessionId: "sess-1" },
+      global: {
+        plugins: [router],
+        stubs: {
+          SlideStage: {
+            props: ["slide"],
+            template: '<div data-testid="mirror-slide">{{ slide.markdown }}</div>',
+          },
+          LivePollSlide: true,
+          LiveQuestionSlide: true,
+          LiveRandomAudienceSlide: true,
+          Wordmark: true,
+        },
+      },
+    });
+    await flushPromises();
+
+    await wrapper.get('[data-testid="account-avatar-button"]').trigger("click");
+    await wrapper.get('[data-testid="account-theme-dark"]').trigger("click");
+
+    expect(localStorage.getItem(THEME_MODE_STORAGE_KEY)).toBe("dark");
+    expect(document.documentElement.classList.contains("dark")).toBe(true);
   });
 
   it("does not fetch deck-slide widgets with the mirror token when embedded revisions are present", async () => {

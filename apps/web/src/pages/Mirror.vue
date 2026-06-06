@@ -7,6 +7,7 @@ import { useSessionStore } from "@/stores/session";
 import { useWidgetsStore } from "@/stores/widgets";
 import Wordmark from "@/components/Wordmark.vue";
 import Icon from "@/components/Icon.vue";
+import AccountMenu from "@/components/AccountMenu.vue";
 import SlideStage from "@/components/SlideStage.vue";
 import LivePollSlide from "@/components/LivePollSlide.vue";
 import LiveQuestionSlide from "@/components/LiveQuestionSlide.vue";
@@ -113,6 +114,11 @@ const statusLabel = computed(() => {
   if (endedState.value || session.ended) return "Ended";
   return session.connected ? "Live" : "Reconnecting";
 });
+
+function signOut() {
+  auth.signOut();
+  router.replace({ name: "signin", query: { next: router.currentRoute.value.fullPath } });
+}
 </script>
 
 <template>
@@ -129,10 +135,17 @@ const statusLabel = computed(() => {
         <span class="t-meta">·</span>
         <span class="mirror-title">{{ session.snapshot?.deck_title || "Mirror" }}</span>
       </div>
-      <span class="mirror-status" :class="{ live: session.connected && !endedState && !denied }">
-        <Icon name="eye" :size="13" />
-        {{ statusLabel }}
-      </span>
+      <div class="mirror-actions">
+        <span class="mirror-status" :class="{ live: session.connected && !endedState && !denied }">
+          <Icon name="eye" :size="13" />
+          {{ statusLabel }}
+        </span>
+        <AccountMenu
+          :user-name="auth.user?.display_name"
+          :user-email="auth.user?.email"
+          @sign-out="signOut"
+        />
+      </div>
     </header>
 
     <main class="mirror-main">
@@ -192,11 +205,16 @@ const statusLabel = computed(() => {
 }
 
 .mirror-brand,
+.mirror-actions,
 .mirror-status {
   display: inline-flex;
   align-items: center;
   gap: 8px;
   min-width: 0;
+}
+
+.mirror-actions {
+  flex-shrink: 0;
 }
 
 .mirror-title {
