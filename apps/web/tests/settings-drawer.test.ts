@@ -91,4 +91,64 @@ describe("SettingsDrawer session settings", () => {
     expect(document.documentElement.classList.contains("dark")).toBe(true);
     expect(localStorage.getItem("slaides:theme-mode")).toBe("dark");
   });
+
+  it("emits mirror access saves for owner and link modes", async () => {
+    vi.mocked(workspaceApi.get).mockResolvedValue(workspace());
+
+    const wrapper = mount(SettingsDrawer, {
+      props: {
+        open: true,
+        mirrorAccess: { mode: "owner", allowed_emails: [] },
+      },
+      global: { stubs: { Teleport: true, Toggle: true } },
+    });
+    await flushPromises();
+
+    await wrapper.findAll(".settings-tabs button").find((button) => button.text() === "Session")!.trigger("click");
+    await wrapper.findAll(".mirror-mode-option").find((button) => button.text().includes("Only owner"))!.trigger("click");
+    await wrapper.get('[data-testid="mirror-access-settings"] .settings-actions button').trigger("click");
+    await wrapper.findAll(".mirror-mode-option").find((button) => button.text().includes("Anyone with link"))!.trigger("click");
+    await wrapper.get('[data-testid="mirror-access-settings"] .settings-actions button').trigger("click");
+
+    expect(wrapper.emitted("save-mirror-access")).toEqual([
+      [{ mode: "owner", allowed_emails: [] }],
+      [{ mode: "link", allowed_emails: [] }],
+    ]);
+  });
+
+  it("normalizes allowed mirror emails and displays normalized saved props", async () => {
+    vi.mocked(workspaceApi.get).mockResolvedValue(workspace());
+
+    const wrapper = mount(SettingsDrawer, {
+      props: {
+        open: true,
+        mirrorAccess: { mode: "allowed", allowed_emails: ["existing@example.com"] },
+      },
+      global: { stubs: { Teleport: true, Toggle: true } },
+    });
+    await flushPromises();
+
+    await wrapper.findAll(".settings-tabs button").find((button) => button.text() === "Session")!.trigger("click");
+    const textarea = wrapper.get<HTMLTextAreaElement>(".mirror-email-input");
+    await textarea.setValue(" Ada@Example.com, bob@example.com\nada@example.com ");
+    await wrapper.get('[data-testid="mirror-access-settings"] .settings-actions button').trigger("click");
+
+    expect(wrapper.emitted("save-mirror-access")?.[0]).toEqual([
+      {
+        mode: "allowed",
+        allowed_emails: ["ada@example.com", "bob@example.com"],
+      },
+    ]);
+
+    await wrapper.setProps({
+      mirrorAccess: {
+        mode: "allowed",
+        allowed_emails: ["ada@example.com", "bob@example.com"],
+      },
+    });
+
+    expect((wrapper.get(".mirror-email-input").element as HTMLTextAreaElement).value).toBe(
+      "ada@example.com\nbob@example.com",
+    );
+  });
 });

@@ -5,7 +5,7 @@ import type { RandomAudienceResults, RandomAudienceSpec, SessionSlide } from "@/
 
 const props = defineProps<{
   slide: SessionSlide;
-  role: "presenter" | "audience";
+  role: "presenter" | "audience" | "mirror";
   inverted?: boolean;
 }>();
 
@@ -39,7 +39,7 @@ function refSuffix(ref: string): string {
         {{ results.eligible_count === 1 ? "member" : "members" }}.
       </p>
 
-      <section v-if="role === 'presenter'" class="picked-list" aria-label="Picked audience members">
+      <section v-if="role === 'presenter' || role === 'mirror'" class="picked-list" aria-label="Picked audience members">
         <article v-for="(pick, index) in results.picked" :key="pick.participant_ref" class="picked-card">
           <span class="picked-number">{{ String(index + 1).padStart(2, "0") }}</span>
           <div>

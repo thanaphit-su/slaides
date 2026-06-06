@@ -2,6 +2,7 @@
 import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import { maybeReceivePreviewAuth } from "@/preview/handshake";
 import { useRouter } from "vue-router";
+import { sessionsApi } from "@/api/sessions";
 import { useAuthStore } from "@/stores/auth";
 import { useSessionStore } from "@/stores/session";
 import { useWidgetsStore } from "@/stores/widgets";
@@ -16,6 +17,7 @@ import LivePollSlide from "@/components/LivePollSlide.vue";
 import LiveQuestionSlide from "@/components/LiveQuestionSlide.vue";
 import LiveRandomAudienceSlide from "@/components/LiveRandomAudienceSlide.vue";
 import AnswerModerationRail from "@/components/AnswerModerationRail.vue";
+import type { SessionSnapshot } from "@/api/types";
 
 const props = defineProps<{ sessionId: string }>();
 const router = useRouter();
@@ -28,6 +30,8 @@ const widgetsStore = useWidgetsStore();
 // triage incoming questions.
 const railOpen = ref(false);
 const copied = ref(false);
+const mirrorCopied = ref(false);
+const mirrorBusy = ref(false);
 const endConfirmOpen = ref(false);
 const endingBusy = ref(false);
 
@@ -118,6 +122,17 @@ const currentSessionSlide = computed(() => {
   return snap.session_slides.find((s) => s.id === snap.current_slide_id) || null;
 });
 
+const fullSnapshot = computed<SessionSnapshot | null>(() => {
+  const snap = session.snapshot;
+  return snap && "questions" in snap ? snap : null;
+});
+
+const presenterNotes = computed<string | null>(() => {
+  const slide = currentDeckSlide.value;
+  const notes = slide && "presenter_notes" in slide ? slide.presenter_notes : null;
+  return typeof notes === "string" ? notes : null;
+});
+
 const presentationOrder = computed(() => {
   const snap = session.snapshot;
   if (!snap) return [];
@@ -149,17 +164,60 @@ const activePresentationIndex = computed(() => {
   return presentationOrder.value.findIndex((s) => s.id === snap.current_slide_id);
 });
 
+const paginationItems = computed(() => {
+  const order = presentationOrder.value;
+  const total = order.length;
+  const active = activePresentationIndex.value;
+  if (total <= 24 || active < 0) {
+    return order.map((slide, index) => ({
+      type: "slide" as const,
+      key: slide.id,
+      slide,
+      index,
+    }));
+  }
+
+  const windowSize = 7;
+  const radius = Math.floor(windowSize / 2);
+  let start = Math.max(0, active - radius);
+  let end = Math.min(total - 1, start + windowSize - 1);
+  if (end - start + 1 < windowSize) {
+    start = Math.max(0, end - windowSize + 1);
+  }
+
+  const items: Array<{ type: "slide"; key: string; slide: (typeof order)[number]; index: number }> = [];
+  for (let index = start; index <= end; index += 1) {
+    items.push({
+      type: "slide",
+      key: order[index].id,
+      slide: order[index],
+      index,
+    });
+  }
+  return items;
+});
+
+const paginationHasHiddenBefore = computed(() => {
+  const first = paginationItems.value[0];
+  return !!first && first.index > 0;
+});
+
+const paginationHasHiddenAfter = computed(() => {
+  const last = paginationItems.value[paginationItems.value.length - 1];
+  return !!last && last.index < presentationOrder.value.length - 1;
+});
+
 const canGoPrev = computed(() => activePresentationIndex.value > 0);
 const canGoNext = computed(
   () => activePresentationIndex.value >= 0 && activePresentationIndex.value < presentationOrder.value.length - 1,
 );
 
 const unanswered = computed(
-  () => session.snapshot?.questions.filter((q) => !q.answered_at).length ?? 0,
+  () => fullSnapshot.value?.questions.filter((q) => !q.answered_at).length ?? 0,
 );
 
 async function copyCode() {
-  const code = session.snapshot?.code;
+  const code = fullSnapshot.value?.code;
   if (!code) return;
   try {
     await navigator.clipboard.writeText(`${window.location.origin}/j/${code}`);
@@ -167,6 +225,31 @@ async function copyCode() {
     window.setTimeout(() => (copied.value = false), 1500);
   } catch {
     // ignore
+  }
+}
+
+async function copyMirrorLink(event?: MouseEvent) {
+  if (!session.snapshot) return;
+  const openInNewTab = !!event?.ctrlKey || !!event?.metaKey;
+  const tab = openInNewTab ? window.open("about:blank", "_blank") : null;
+  mirrorBusy.value = true;
+  try {
+    const link = await sessionsApi.mirrorLink(session.snapshot.id);
+    const absolute = new URL(link.url, window.location.origin).toString();
+    if (openInNewTab) {
+      if (tab) {
+        tab.opener = null;
+        tab.location.href = absolute;
+      } else {
+        window.open(absolute, "_blank", "noopener,noreferrer");
+      }
+      return;
+    }
+    await navigator.clipboard.writeText(absolute);
+    mirrorCopied.value = true;
+    window.setTimeout(() => (mirrorCopied.value = false), 1500);
+  } finally {
+    mirrorBusy.value = false;
   }
 }
 
@@ -371,7 +454,17 @@ watch(
         </button>
         <button class="btn btn-sm" @click="copyCode">
           <Icon name="copy" :size="14" />
-          {{ copied ? "Copied" : session.snapshot?.code || "…" }}
+          {{ copied ? "Copied" : fullSnapshot?.code || "…" }}
+        </button>
+        <button
+          v-if="!inPreviewIframe"
+          class="btn btn-sm"
+          :disabled="mirrorBusy"
+          @click="copyMirrorLink"
+          title="Copy mirror link"
+        >
+          <Icon name="copy" :size="14" />
+          {{ mirrorCopied ? "Mirror copied" : "Mirror" }}
         </button>
         <AccountMenu
           v-if="!inPreviewIframe"
@@ -403,7 +496,7 @@ watch(
             slide_id: currentDeckSlide.id,
             deck_title: session.snapshot?.deck_title,
           }"
-          :interpret-quick-options="session.snapshot?.interpret_quick_options || []"
+          :interpret-quick-options="fullSnapshot?.interpret_quick_options || []"
           @widget-event="(e) => session.forwardWidgetEvent(e.placement, { type: e.type, payload: e.payload })"
         />
         <LivePollSlide
@@ -458,8 +551,8 @@ watch(
       />
       <PresenterRail
         v-else-if="railOpen"
-        :notes="currentDeckSlide?.presenter_notes ?? null"
-        :questions="session.snapshot?.questions || []"
+        :notes="presenterNotes"
+        :questions="fullSnapshot?.questions || []"
         @answer="(id) => session.markAnswered(id)"
       />
     </div>
@@ -481,26 +574,70 @@ watch(
         <Icon name="chev_left" :size="16" /> Prev
       </button>
 
-      <div :style="{ display: 'flex', alignItems: 'center', gap: '14px' }">
-        <div :style="{ display: 'flex', gap: '6px', alignItems: 'center' }">
-          <button
-            v-for="(s, i) in presentationOrder"
-            :key="s.id"
-            type="button"
-            @click="selectPresentationSlide(s.id)"
-            :title="`Slide ${i + 1}`"
-            :aria-label="`Go to slide ${i + 1}`"
+      <div :style="{ display: 'flex', alignItems: 'center', gap: '14px', minWidth: 0 }">
+        <div
+          data-testid="presenter-pagination-window"
+          :style="{
+            position: 'relative',
+            maxWidth: 'min(760px, 52vw)',
+            overflow: 'hidden',
+          }"
+        >
+          <span
+            v-if="paginationHasHiddenBefore"
+            data-testid="presenter-pagination-fade-left"
+            aria-hidden="true"
             :style="{
-              width: '8px',
-              height: '8px',
-              borderRadius: '50%',
-              border: 'none',
-              padding: 0,
-              cursor: 'pointer',
-              background: i === activePresentationIndex ? 'var(--ink)' : 'var(--rule-strong)',
-              transition: 'background .15s ease',
+              position: 'absolute',
+              inset: '0 auto 0 0',
+              width: '18px',
+              zIndex: 1,
+              pointerEvents: 'none',
+              background: 'linear-gradient(90deg, var(--paper), transparent)',
             }"
           />
+          <span
+            v-if="paginationHasHiddenAfter"
+            data-testid="presenter-pagination-fade-right"
+            aria-hidden="true"
+            :style="{
+              position: 'absolute',
+              inset: '0 0 0 auto',
+              width: '18px',
+              zIndex: 1,
+              pointerEvents: 'none',
+              background: 'linear-gradient(270deg, var(--paper), transparent)',
+            }"
+          />
+          <div
+            :style="{
+              display: 'flex',
+              gap: '6px',
+              alignItems: 'center',
+              paddingLeft: paginationHasHiddenBefore ? '8px' : '0',
+              paddingRight: paginationHasHiddenAfter ? '8px' : '0',
+            }"
+          >
+          <template v-for="item in paginationItems" :key="item.key">
+            <button
+              type="button"
+              @click="selectPresentationSlide(item.slide.id)"
+              :title="`Slide ${item.index + 1}`"
+              :aria-label="`Go to slide ${item.index + 1}`"
+              :style="{
+                width: item.index === activePresentationIndex ? '9px' : '7px',
+                height: item.index === activePresentationIndex ? '9px' : '7px',
+                flex: '0 0 auto',
+                borderRadius: '50%',
+                border: 'none',
+                padding: 0,
+                cursor: 'pointer',
+                background: item.index === activePresentationIndex ? 'var(--ink)' : 'var(--rule-strong)',
+                transition: 'background .15s ease, width .15s ease, height .15s ease',
+              }"
+            />
+          </template>
+          </div>
         </div>
         <span class="t-mono" :style="{ color: 'var(--ink-soft)' }">
           {{ activePresentationIndex >= 0 ? activePresentationIndex + 1 : "—" }} / {{ presentationOrder.length }}

@@ -45,6 +45,12 @@ onMounted(() => {
   }
 });
 
+function instructorRedirectTarget(): string {
+  const raw = route.query.next;
+  if (typeof raw !== "string") return "/workspace";
+  return raw.startsWith("/") && !raw.startsWith("//") ? raw : "/workspace";
+}
+
 async function submitInstructor(e: Event) {
   e.preventDefault();
   try {
@@ -64,7 +70,7 @@ async function submitInstructor(e: Event) {
       await joinSignedInSession();
       return;
     }
-    await router.push("/workspace");
+    await router.push(instructorRedirectTarget());
   } catch {
     // error is in auth.error
   }

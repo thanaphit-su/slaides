@@ -18,7 +18,7 @@ import WidgetCollection from "@/components/WidgetCollection.vue";
 import SettingsDrawer from "@/components/SettingsDrawer.vue";
 import InterpretPopover from "@/components/InterpretPopover.vue";
 import ConfirmDialog from "@/components/ConfirmDialog.vue";
-import type { SessionListItem, SlideWidgetEmbed, Widget, WidgetSummary } from "@/api/types";
+import type { MirrorAccessSettings, SessionListItem, SlideWidgetEmbed, Widget, WidgetSummary } from "@/api/types";
 
 const props = defineProps<{ deckId: string }>();
 const router = useRouter();
@@ -44,6 +44,7 @@ const slideDelete = ref<{ id: string } | null>(null);
 const slideDeleting = ref(false);
 const activeSession = ref<SessionListItem | null>(null);
 const editorMode = ref<"rendered" | "markdown">("rendered");
+const mirrorSaving = ref(false);
 const WIDGET_SIDEBAR_WIDTH_KEY = "slaides:widget-sidebar-width";
 const WIDGET_SIDEBAR_MIN = 340;
 const WIDGET_SIDEBAR_MAX = 720;
@@ -190,6 +191,9 @@ const activeSlideIndex = computed(() => {
 const activePlacement = computed(() => activeSlide.value?.widgets[0] ?? null);
 const sessionActionHint = computed(() =>
   activeSession.value ? `Resume · ${activeSession.value.code}` : "Start a live session for this deck",
+);
+const mirrorAccess = computed<MirrorAccessSettings | null>(() =>
+  editor.deck ? editor.deck.mirror_access || { mode: "owner", allowed_emails: [] } : null,
 );
 
 function onCanvasFocusChange(focused: boolean) {
@@ -494,6 +498,20 @@ async function onExport() {
   a.download = `${editor.deck.title.replace(/[^a-z0-9-]+/gi, "-")}.slaides`;
   a.click();
   URL.revokeObjectURL(url);
+}
+
+async function onSaveMirrorAccess(settings: MirrorAccessSettings) {
+  if (!editor.deck) return;
+  mirrorSaving.value = true;
+  try {
+    const saved = await decksApi.updateMirrorAccess(editor.deck.id, settings);
+    editor.deck.mirror_access = saved;
+    showToast("Mirror access saved.");
+  } catch (err) {
+    showToast(err instanceof Error ? err.message : "Could not save mirror access.");
+  } finally {
+    mirrorSaving.value = false;
+  }
 }
 
 async function onPickWidget(w: WidgetSummary) {
@@ -1062,9 +1080,12 @@ function onDeleteSlideById(id: string) {
       :user-name="auth.user?.display_name"
       :user-email="auth.user?.email"
       :can-start-session="!!editor.deck"
+      :mirror-access="mirrorAccess"
+      :mirror-saving="mirrorSaving"
       @close="settingsOpen = false"
       @start-session="settingsOpen = false; onStartSession()"
       @sign-out="signOut"
+      @save-mirror-access="onSaveMirrorAccess"
     />
 
     <div

@@ -54,4 +54,27 @@ describe("decksApi", () => {
       presenter_notes: "Speaker cue",
     });
   });
+
+  it("patches mirror access settings", async () => {
+    const fetchMock = vi.fn(async (_url: RequestInfo | URL, _init?: RequestInit) => {
+      return new Response(JSON.stringify({ mode: "allowed", allowed_emails: ["a@example.com"] }), {
+        status: 200,
+      });
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    await decksApi.updateMirrorAccess("deck-1", {
+      mode: "allowed",
+      allowed_emails: ["a@example.com"],
+    });
+
+    expect(fetchMock).toHaveBeenCalledOnce();
+    const [url, init] = fetchMock.mock.calls[0];
+    expect(String(url)).toContain("/decks/deck-1/mirror-access");
+    expect(init?.method).toBe("PATCH");
+    expect(JSON.parse(String(init?.body))).toEqual({
+      mode: "allowed",
+      allowed_emails: ["a@example.com"],
+    });
+  });
 });

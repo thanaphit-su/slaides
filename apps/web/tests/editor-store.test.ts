@@ -58,6 +58,7 @@ function deck(overrides: Partial<Deck> = {}): Deck {
       slide({ id: "slide-a", section_id: "section-a", position: 0, markdown: "# A" }),
       slide({ id: "slide-c", section_id: "section-c", position: 1, markdown: "# C" }),
     ],
+    mirror_access: { mode: "owner", allowed_emails: [] },
     ...overrides,
   };
 }

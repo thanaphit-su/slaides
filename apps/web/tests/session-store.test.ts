@@ -3,7 +3,7 @@ import { setActivePinia, createPinia } from "pinia";
 import { useSessionStore, saveGuestToken } from "../src/stores/session";
 import { useAuthStore } from "../src/stores/auth";
 import { sessionsApi } from "../src/api/sessions";
-import type { SessionSnapshot } from "../src/api/types";
+import type { MirrorSessionSnapshot, SessionSnapshot } from "../src/api/types";
 
 class MockWebSocket {
   static instances: MockWebSocket[] = [];
@@ -67,6 +67,30 @@ const baseSnapshot: SessionSnapshot = {
   session_slides: [],
   questions: [],
   audience_count: 0,
+};
+
+const mirrorSnapshot: MirrorSessionSnapshot = {
+  id: "sess-1",
+  deck_id: "deck-1",
+  deck_title: "Test deck",
+  started_at: new Date().toISOString(),
+  ended_at: null,
+  current_slide_id: "slide-1",
+  sections: [],
+  slides: [
+    {
+      id: "slide-1",
+      deck_id: "deck-1",
+      section_id: null,
+      position: 0,
+      kicker: null,
+      markdown: "# One",
+      updated_at: new Date().toISOString(),
+      widgets: [],
+    },
+  ],
+  session_slides: [],
+  placement_states: [],
 };
 
 describe("session store WS dispatch", () => {
@@ -138,6 +162,77 @@ describe("session store WS dispatch", () => {
     expect(MockWebSocket.instances[0].url).toContain("token=preview-token");
     expect(MockWebSocket.instances[0].url).not.toContain("token=stored-token");
     snapshotSpy.mockRestore();
+  });
+
+  it("loads a mirror snapshot and connects with mirror role without heartbeat", async () => {
+    const snapshotSpy = vi.spyOn(sessionsApi, "mirrorSnapshot").mockResolvedValueOnce(
+      structuredClone(mirrorSnapshot),
+    );
+
+    const store = useSessionStore();
+    await store.loadMirror("sess-1", "mirror-token");
+    store.connect("mirror", "sess-1", null, "mirror-token");
+    await new Promise<void>((r) => queueMicrotask(() => r()));
+
+    expect(snapshotSpy).toHaveBeenCalledWith("sess-1", "mirror-token");
+    expect(store.role).toBe("mirror");
+    expect(MockWebSocket.instances[0].url).toContain("token=mirror-token");
+    expect(MockWebSocket.instances[0].url).toContain("role=mirror");
+    expect(MockWebSocket.instances[0].sent).toEqual([]);
+    snapshotSpy.mockRestore();
+  });
+
+  it("ignores question events for mirror snapshots", async () => {
+    const store = useSessionStore();
+    store.snapshot = structuredClone(mirrorSnapshot);
+    store.connect("mirror", "sess-1", null, "mirror-token");
+    await new Promise<void>((r) => queueMicrotask(() => r()));
+    const ws = MockWebSocket.instances[0];
+
+    ws.onmessage?.({
+      data: JSON.stringify({
+        type: "question.new",
+        payload: {
+          id: "q-1",
+          slide_id: "slide-1",
+          participant_ref: "ref",
+          anon: false,
+          text: "Private question",
+          raised_at: new Date().toISOString(),
+          answered_at: null,
+        },
+      }),
+    });
+
+    expect("questions" in store.snapshot!).toBe(false);
+  });
+
+  it("does not buffer host-only open answers while connected as mirror", async () => {
+    const store = useSessionStore();
+    store.snapshot = structuredClone(mirrorSnapshot);
+    store.connect("mirror", "sess-1", null, "mirror-token");
+    await new Promise<void>((r) => queueMicrotask(() => r()));
+    const ws = MockWebSocket.instances[0];
+
+    ws.onmessage?.({
+      data: JSON.stringify({
+        type: "question_answer.new",
+        payload: {
+          session_slide_id: "ss-q",
+          answer: {
+            id: 12,
+            text: "Private answer",
+            participant_ref: "ref",
+            display_name: "Ada",
+            anon: false,
+            occurred_at: new Date().toISOString(),
+            promoted: false,
+          },
+        },
+      }),
+    });
+
+    expect(store.takeIncomingAnswers("ss-q")).toEqual([]);
   });
 
   it("tracks presenter-passed slides without forcing audiences off a previous slide", async () => {

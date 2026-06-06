@@ -575,14 +575,34 @@ function renderWidgetBlock(b: Block, key: number, opts: RenderOptions, fill = fa
   const chrome = h("div", [labelChrome, actionChrome]);
 
   let body: VNode;
-  const renderedWidget = widget && opts.usePlacementRevision !== false && placement?.revision
+  const revisionWidget: Widget | null = placement?.revision
     ? {
-        ...widget,
+        id: placement.widget_id,
+        deck_id: "",
+        derived_from_id: null,
+        name: placement.name,
+        kind: placement.kind,
+        description: null,
         html: placement.revision.html || "",
         js: placement.revision.js,
         css: placement.revision.css,
         props_schema: placement.revision.props_schema || {},
-        behavior: placement.revision.behavior,
+        tags: [],
+        version: String(placement.revision.version_number || 1),
+        behavior: placement.revision.behavior || { kind: "quiet" },
+        current_revision_id: placement.revision.id,
+        example_props: placement.revision.example_props || {},
+        ai_spec: placement.revision.ai_spec || {},
+      }
+    : null;
+  const renderedWidget = opts.usePlacementRevision !== false && placement?.revision
+    ? {
+        ...(widget || revisionWidget!),
+        html: placement.revision.html || "",
+        js: placement.revision.js,
+        css: placement.revision.css,
+        props_schema: placement.revision.props_schema || {},
+        behavior: placement.revision.behavior || { kind: "quiet" },
         current_revision_id: placement.revision.id,
         example_props: placement.revision.example_props || {},
         ai_spec: placement.revision.ai_spec || {},
@@ -636,7 +656,7 @@ function renderWidgetBlock(b: Block, key: number, opts: RenderOptions, fill = fa
       // the iframe DOM persisted and showed the *previous* slide's widget
       // (often in mid-interaction state) until reset. See bug report
       // 2026-05-25: "Widget content bleeds across slides after interaction".
-      key: widget ? `widget-${id}-${widget.id}` : `widget-${id}-loading`,
+      key: renderedWidget ? `widget-${id}-${renderedWidget.id}` : `widget-${id}-loading`,
       contenteditable: "false",
       "data-block": "widget",
       "data-widget-id": id,

@@ -42,6 +42,10 @@ def generate_salt() -> str:
     return secrets.token_hex(16)
 
 
+def generate_mirror_token() -> str:
+    return secrets.token_urlsafe(32)
+
+
 async def _code_taken(session: AsyncSession, code: str) -> bool:
     row = (await session.execute(select(SessionRow.id).where(SessionRow.code == code))).first()
     return row is not None
@@ -68,6 +72,7 @@ async def create_session(
         workspace_id=deck.workspace_id,
         code=code,
         salt=generate_salt(),
+        mirror_token=generate_mirror_token(),
         current_slide_id=first_slide.id if first_slide else None,
         config={},
     )

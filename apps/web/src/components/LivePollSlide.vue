@@ -7,7 +7,7 @@ import type { PollResults, PollSpec, SessionSlide } from "@/api/types";
 
 const props = defineProps<{
   slide: SessionSlide;
-  role: "presenter" | "audience";
+  role: "presenter" | "audience" | "mirror";
   inverted: boolean;
 }>();
 

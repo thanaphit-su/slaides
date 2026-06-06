@@ -9,12 +9,16 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from ..auth.deps import current_user
 from ..db.deps import db_session
 from ..db.models import AppUser, Deck, Section, Slide, SlideWidget, Widget, WidgetRevision
+from ..db.models import Session as SessionRow
+from ..sessions import service as session_service
+from ..sessions.ws import hub as session_ws_hub
 from . import package, service
 from .schemas import (
     DeckCreate,
     DeckListItem,
     DeckOut,
     DeckPatch,
+    MirrorAccessSettings,
     SectionCreate,
     SectionOut,
     SectionPatch,
@@ -38,6 +42,13 @@ async def _load_deck(session: AsyncSession, user: AppUser, deck_id: uuid.UUID) -
     return deck
 
 
+async def _load_owned_deck(session: AsyncSession, user: AppUser, deck_id: uuid.UUID) -> Deck:
+    deck = await _load_deck(session, user, deck_id)
+    if deck.owner_id != user.id:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="deck not found")
+    return deck
+
+
 async def _deck_out(session: AsyncSession, deck: Deck) -> DeckOut:
     await session.refresh(deck)
     slides = await service.list_slides(session, deck.id)
@@ -51,6 +62,10 @@ async def _deck_out(session: AsyncSession, deck: Deck) -> DeckOut:
         manifest=deck.manifest or {},
         created_at=deck.created_at,
         updated_at=deck.updated_at,
+        mirror_access=MirrorAccessSettings(
+            mode=deck.mirror_access_mode or "owner",
+            allowed_emails=list(deck.mirror_allowed_emails or []),
+        ),
         sections=[SectionOut.model_validate(s) for s in sections],
         slides=slide_outs,
     )
@@ -163,6 +178,44 @@ async def patch_deck(
         deck.manifest = body.manifest
     await session.flush()
     return await _deck_out(session, deck)
+
+
+@router.patch("/{deck_id}/mirror-access", response_model=MirrorAccessSettings)
+async def update_mirror_access(
+    deck_id: uuid.UUID,
+    body: MirrorAccessSettings,
+    user: AppUser = Depends(current_user),
+    session: AsyncSession = Depends(db_session),
+) -> MirrorAccessSettings:
+    deck = await _load_owned_deck(session, user, deck_id)
+    settings = MirrorAccessSettings.model_validate(body.model_dump())
+    prior_mode = deck.mirror_access_mode or "owner"
+    prior_allowed = list(deck.mirror_allowed_emails or [])
+    access_changed = prior_mode != settings.mode or prior_allowed != (
+        settings.allowed_emails if settings.mode == "allowed" else []
+    )
+    active_session_ids: list[uuid.UUID] = []
+    if access_changed:
+        active_sessions = (
+            await session.execute(
+                select(SessionRow).where(
+                    SessionRow.deck_id == deck.id,
+                    SessionRow.ended_at.is_(None),
+                )
+            )
+        ).scalars().all()
+        for row in active_sessions:
+            row.mirror_token = session_service.generate_mirror_token()
+            active_session_ids.append(row.id)
+    deck.mirror_access_mode = settings.mode
+    deck.mirror_allowed_emails = settings.allowed_emails if settings.mode == "allowed" else []
+    await session.flush()
+    if active_session_ids:
+        await session_ws_hub.close_role_for_sessions(active_session_ids, "mirror")
+    return MirrorAccessSettings(
+        mode=deck.mirror_access_mode,
+        allowed_emails=list(deck.mirror_allowed_emails or []),
+    )
 
 
 @router.delete("/{deck_id}", status_code=status.HTTP_204_NO_CONTENT)

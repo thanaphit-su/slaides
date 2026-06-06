@@ -7,7 +7,7 @@ import type { PromotedAnswer, QuestionResults, QuestionSpec, SessionSlide } from
 
 const props = defineProps<{
   slide: SessionSlide;
-  role: "presenter" | "audience";
+  role: "presenter" | "audience" | "mirror";
   inverted: boolean;
 }>();
 

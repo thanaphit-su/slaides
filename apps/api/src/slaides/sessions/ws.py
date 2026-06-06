@@ -8,6 +8,7 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from fastapi import APIRouter, HTTPException, Query, WebSocket, WebSocketDisconnect, status
+from fastapi.security import HTTPAuthorizationCredentials
 from redis import asyncio as aioredis
 from sqlalchemy import select
 from sqlalchemy.orm.attributes import flag_modified
@@ -15,7 +16,7 @@ from sqlalchemy.orm.attributes import flag_modified
 from ..auth import service as auth_service
 from ..auth.supabase import get_supabase_auth
 from ..db.base import get_session_factory
-from ..db.models import AppUser, InteractionLog, Participant, SessionSlide
+from ..db.models import AppUser, Deck, InteractionLog, Participant, SessionSlide
 from ..db.models import Session as SessionRow
 from ..settings import get_settings
 from . import service as session_service
@@ -25,16 +26,33 @@ logger = logging.getLogger(__name__)
 
 PRESENCE_TTL = 30
 PRESENCE_PREFIX = "sess:{sid}:presence:"
+MIRROR_EVENT_TYPES = {
+    "slide.changed",
+    "session_slide.inserted",
+    "session.ended",
+    "interaction.tally",
+    "interaction_spec.updated",
+    "interaction_results.updated",
+    "widget.state",
+    "widget.reset",
+    "widget.update",
+}
 
 
 def channel_name(session_id: uuid.UUID) -> str:
     return f"sess:{session_id}"
 
 
+def _event_visible_to_role(decoded: Any, role: str) -> bool:
+    if role != "mirror":
+        return True
+    return isinstance(decoded, dict) and decoded.get("type") in MIRROR_EVENT_TYPES
+
+
 @dataclass(eq=False)
 class _Connection:
     socket: Any
-    role: str  # 'host' | 'participant'
+    role: str  # 'host' | 'participant' | 'mirror'
     participant_id: uuid.UUID | None
     participant_ref: str | None
     queue: asyncio.Queue[str] = field(default_factory=lambda: asyncio.Queue(maxsize=512))
@@ -101,6 +119,8 @@ class Hub:
                 for conn in list(state.connections):
                     if role_target and conn.role != role_target:
                         continue
+                    if not role_target and not _event_visible_to_role(decoded, conn.role):
+                        continue
                     try:
                         conn.queue.put_nowait(outbound)
                     except asyncio.QueueFull:
@@ -155,6 +175,25 @@ class Hub:
                 state.subscriber_task = None
                 state.pubsub = None
                 self._sessions.pop(session_id, None)
+
+    async def close_role(self, session_id: uuid.UUID, role: str) -> None:
+        async with self._lock:
+            state = self._sessions.get(session_id)
+            conns = [conn for conn in (state.connections if state else set()) if conn.role == role]
+        for conn in conns:
+            close = getattr(conn.socket, "close", None)
+            if close is None:
+                continue
+            try:
+                result = close()
+                if result is not None:
+                    await result
+            except Exception:  # noqa: BLE001
+                pass
+
+    async def close_role_for_sessions(self, session_ids: list[uuid.UUID], role: str) -> None:
+        for session_id in session_ids:
+            await self.close_role(session_id, role)
 
     async def presence_count(self, session_id: uuid.UUID) -> int:
         redis = await self._ensure_redis()
@@ -380,11 +419,13 @@ router = APIRouter()
 async def session_ws(
     websocket: WebSocket,
     session_id: uuid.UUID,
-    token: str = Query(...),
+    token: str = Query(""),
+    role: str | None = Query(None),
+    mirror_token: str | None = Query(None),
 ) -> None:
     payload = _guest_payload(token)
     kind = payload.get("kind") if payload is not None else None
-    role: str
+    connection_role: str
     participant_id: uuid.UUID | None = None
     participant_ref: str | None = None
 
@@ -396,7 +437,25 @@ async def session_ws(
         if row is None or row.ended_at is not None:
             await websocket.close(code=status.WS_1008_POLICY_VIOLATION)
             return
-        if kind == "guest" and payload is not None:
+        if role == "mirror":
+            deck = (await db.execute(select(Deck).where(Deck.id == row.deck_id))).scalar_one_or_none()
+            if deck is None:
+                await websocket.close(code=status.WS_1008_POLICY_VIOLATION)
+                return
+            from .router import _can_view_mirror, _optional_signed_in_user
+
+            creds = (
+                HTTPAuthorizationCredentials(scheme="Bearer", credentials=token)
+                if token
+                else None
+            )
+            user = await _optional_signed_in_user(creds, db)
+            token_for_access = mirror_token or token or None
+            if not _can_view_mirror(row, deck, user, token_for_access):
+                await websocket.close(code=status.WS_1008_POLICY_VIOLATION)
+                return
+            connection_role = "mirror"
+        elif kind == "guest" and payload is not None:
             try:
                 participant_id = uuid.UUID(payload["sub"])
                 sid_claim = uuid.UUID(payload["sid"])
@@ -413,18 +472,18 @@ async def session_ws(
                 await websocket.close(code=status.WS_1008_POLICY_VIOLATION)
                 return
             participant_ref = participant.ref
-            role = "participant"
+            connection_role = "participant"
         else:
             user = await _supabase_host_from_token(token, row, db)
             if user is None:
                 await websocket.close(code=status.WS_1008_POLICY_VIOLATION)
                 return
-            role = "host"
+            connection_role = "host"
 
     await websocket.accept()
     conn = _Connection(
         socket=websocket,
-        role=role,
+        role=connection_role,
         participant_id=participant_id,
         participant_ref=participant_ref,
     )
@@ -637,6 +696,9 @@ async def _handle_client_event(
     if etype == "heartbeat":
         if conn.participant_ref:
             await hub.heartbeat(session_id, conn.participant_ref)
+        return
+
+    if conn.role == "mirror":
         return
 
     if etype in ("interaction.vote", "interaction.text", "interaction.slider", "widget.contribute"):

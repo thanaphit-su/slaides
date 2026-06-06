@@ -5,19 +5,30 @@ import { llmApi } from "@/api/llm";
 import { useSessionStore } from "@/stores/session";
 import Icon from "@/components/Icon.vue";
 import { useThemeMode, type ThemeMode } from "@/theme/useThemeMode";
-import type { InterpretQuickOption, LlmCapability, LlmModelConfig, Workspace, WorkspacePatch } from "@/api/types";
+import type {
+  InterpretQuickOption,
+  LlmCapability,
+  LlmModelConfig,
+  MirrorAccessMode,
+  MirrorAccessSettings,
+  Workspace,
+  WorkspacePatch,
+} from "@/api/types";
 
 const props = defineProps<{
   open: boolean;
   userName?: string | null;
   userEmail?: string | null;
   canStartSession?: boolean;
+  mirrorAccess?: MirrorAccessSettings | null;
+  mirrorSaving?: boolean;
 }>();
 const emit = defineEmits<{
   (e: "close"): void;
   (e: "start-session"): void;
   (e: "sign-out"): void;
   (e: "saved", workspace: Workspace): void;
+  (e: "save-mirror-access", settings: MirrorAccessSettings): void;
 }>();
 
 const tab = ref<"session" | "llm" | "display" | "account">("llm");
@@ -30,6 +41,9 @@ const clearKey = ref(false);
 const advancedModelId = ref<string | null>(null);
 const session = useSessionStore();
 const theme = useThemeMode();
+const mirrorEmailText = ref("");
+const mirrorMode = ref<MirrorAccessMode>("owner");
+const mirrorError = ref<string | null>(null);
 
 const defaultInterpretQuickOptions: InterpretQuickOption[] = [
   { label: "AI", instruction: "in plain English" },
@@ -59,6 +73,12 @@ const themeOptions: { value: ThemeMode; label: string; description: string }[] =
   { value: "system", label: "System", description: "Follow this device." },
   { value: "light", label: "Light", description: "Use the editorial light palette." },
   { value: "dark", label: "Dark", description: "Use the low-light palette." },
+];
+
+const mirrorOptions: { value: MirrorAccessMode; label: string; description: string }[] = [
+  { value: "owner", label: "Only owner", description: "Signed-in deck owner only." },
+  { value: "allowed", label: "Allowed users", description: "Signed-in users on the email list." },
+  { value: "link", label: "Anyone with link", description: "Anyone with the mirror link can view." },
 ];
 
 const form = reactive({
@@ -282,6 +302,39 @@ function resetInterpretQuickOptions() {
   form.interpretQuickOptions = defaultInterpretQuickOptions.map((option) => ({ ...option }));
 }
 
+function cleanMirrorEmails(raw: string): string[] {
+  const seen = new Set<string>();
+  const cleaned: string[] = [];
+  for (const part of raw.split(/[\s,;]+/)) {
+    const email = part.trim().toLowerCase();
+    if (!email) continue;
+    if (!email.includes("@")) throw new Error(`Invalid email: ${part}`);
+    if (seen.has(email)) continue;
+    seen.add(email);
+    cleaned.push(email);
+  }
+  return cleaned;
+}
+
+function applyMirrorAccess(settings?: MirrorAccessSettings | null) {
+  mirrorMode.value = settings?.mode || "owner";
+  mirrorEmailText.value = (settings?.allowed_emails || []).join("\n");
+  mirrorError.value = null;
+}
+
+function saveMirrorAccess() {
+  mirrorError.value = null;
+  try {
+    const allowed = mirrorMode.value === "allowed" ? cleanMirrorEmails(mirrorEmailText.value) : [];
+    emit("save-mirror-access", {
+      mode: mirrorMode.value,
+      allowed_emails: allowed,
+    });
+  } catch (err) {
+    mirrorError.value = err instanceof Error ? err.message : "Could not save mirror access.";
+  }
+}
+
 watch(
   () => props.open,
   (open) => {
@@ -291,6 +344,12 @@ watch(
       void load();
     }
   },
+  { immediate: true },
+);
+
+watch(
+  () => props.mirrorAccess,
+  (settings) => applyMirrorAccess(settings),
   { immediate: true },
 );
 
@@ -350,6 +409,46 @@ watch(tab, () => {
                 <span class="live-dot" />
                 {{ saving ? "Saving..." : "Start session" }}
               </button>
+            </div>
+            <div v-if="props.mirrorAccess" class="settings-block" data-testid="mirror-access-settings">
+              <h3>Mirror access</h3>
+              <p>Choose who can view the clean slide-only session screen.</p>
+              <div class="mirror-mode-grid" role="radiogroup" aria-label="Mirror access">
+                <button
+                  v-for="option in mirrorOptions"
+                  :key="option.value"
+                  type="button"
+                  class="mirror-mode-option"
+                  :class="{ active: mirrorMode === option.value }"
+                  :aria-checked="mirrorMode === option.value"
+                  role="radio"
+                  @click="mirrorMode = option.value"
+                >
+                  <strong>{{ option.label }}</strong>
+                  <span>{{ option.description }}</span>
+                </button>
+              </div>
+              <label v-if="mirrorMode === 'allowed'" class="mirror-email-field">
+                <span class="field-label">Allowed email addresses</span>
+                <textarea
+                  v-model="mirrorEmailText"
+                  class="input mirror-email-input"
+                  rows="4"
+                  placeholder="teacher@example.com&#10;producer@example.com"
+                />
+              </label>
+              <div class="settings-actions mirror-actions">
+                <button
+                  class="btn btn-sm"
+                  type="button"
+                  :disabled="props.mirrorSaving"
+                  @click="saveMirrorAccess"
+                >
+                  <Icon name="check" :size="14" />
+                  {{ props.mirrorSaving ? "Saving..." : "Save mirror access" }}
+                </button>
+              </div>
+              <p v-if="mirrorError" class="error-text">{{ mirrorError }}</p>
             </div>
             <div class="settings-block">
               <h3>Recordings & transcripts</h3>
@@ -717,6 +816,50 @@ watch(tab, () => {
 .theme-mode-grid {
   display: grid;
   gap: 8px;
+}
+
+.mirror-mode-grid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 8px;
+}
+
+.mirror-mode-option {
+  border: 1px solid var(--rule);
+  background: var(--paper-2);
+  color: var(--ink);
+  border-radius: var(--r-md);
+  padding: 10px 12px;
+  text-align: left;
+  display: grid;
+  gap: 3px;
+}
+
+.mirror-mode-option span {
+  color: var(--ink-soft);
+  font-size: 12px;
+}
+
+.mirror-mode-option.active {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-soft);
+}
+
+.mirror-email-field {
+  display: block;
+  margin-top: 12px;
+}
+
+.mirror-email-input {
+  margin-top: 6px;
+  resize: vertical;
+  min-height: 94px;
+  font-family: var(--mono);
+  font-size: 12px;
+}
+
+.mirror-actions {
+  margin-top: 12px;
 }
 
 .theme-mode-option {

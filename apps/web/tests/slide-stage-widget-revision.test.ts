@@ -77,6 +77,50 @@ describe("SlideStage widget revision rendering", () => {
     expect(srcdoc).not.toContain(".card{border-color:var(--muted)}");
   });
 
+  it("renders embedded placement revision when the widget body is not fetched", () => {
+    const slide: Slide = {
+      id: "slide-1",
+      deck_id: "deck-1",
+      section_id: null,
+      position: 0,
+      kicker: null,
+      markdown: "{{widget:pid}}",
+      updated_at: new Date().toISOString(),
+      widgets: [
+        {
+          placement_id: "pid",
+          widget_id: "widget-1",
+          revision_id: "rev-1",
+          revision: {
+            id: "rev-1",
+            widget_id: "widget-1",
+            version_number: 1,
+            html: "<p>embedded mirror widget</p>",
+            js: null,
+            css: ".mirror{color:var(--primary)}",
+            props_schema: {},
+            example_props: {},
+            behavior: { kind: "quiet" },
+            ai_spec: {},
+            created_reason: "create",
+          },
+          kind: "custom",
+          name: "Widget",
+          props: {},
+        },
+      ],
+    };
+
+    const wrapper = mount(SlideStage, {
+      props: { slide, role: "preview" },
+    });
+
+    const srcdoc = wrapper.find("iframe").attributes("srcdoc") || "";
+    expect(srcdoc).toContain("<p>embedded mirror widget</p>");
+    expect(srcdoc).toContain(".mirror{color:var(--primary)}");
+    expect(wrapper.text()).not.toContain("Loading widget");
+  });
+
   it("uses configured interpret quick options for selected slide text", async () => {
     const slide: Slide = {
       id: "slide-1",

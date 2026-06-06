@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+from datetime import datetime, timezone
+import uuid
+
 
 async def _create_deck(client, headers):
     res = await client.post(
@@ -9,6 +12,20 @@ async def _create_deck(client, headers):
     )
     assert res.status_code == 201, res.text
     return res.json()
+
+
+async def _session_mirror_token(session_id: str) -> str | None:
+    from sqlalchemy import select
+
+    from slaides.db import models
+    from slaides.db.base import get_session_factory
+
+    factory = get_session_factory()
+    async with factory() as db:
+        row = (
+            await db.execute(select(models.Session).where(models.Session.id == uuid.UUID(session_id)))
+        ).scalar_one()
+        return row.mirror_token
 
 
 async def test_create_session_returns_snapshot_with_code(client, auth_headers):
@@ -26,6 +43,168 @@ async def test_create_session_returns_snapshot_with_code(client, auth_headers):
     assert body["ended_at"] is None
     assert body["current_slide_id"] == deck["slides"][0]["id"]
     assert body["audience_count"] == 0
+    assert await _session_mirror_token(body["id"])
+
+
+async def test_mirror_snapshot_is_sanitized_and_owner_access_requires_signed_in_owner(client, auth_headers):
+    deck = await _create_deck(client, auth_headers)
+    deck_id = deck["id"]
+    slide_id = deck["slides"][0]["id"]
+    notes = await client.patch(
+        f"/api/v1/decks/{deck_id}/slides/{slide_id}/notes",
+        json={"presenter_notes": "private presenter notes"},
+        headers=auth_headers,
+    )
+    assert notes.status_code == 200, notes.text
+    session = (
+        await client.post("/api/v1/sessions", json={"deck_id": deck_id}, headers=auth_headers)
+    ).json()
+    guest = await client.post(
+        "/api/v1/auth/guest",
+        json={"code": session["code"], "email": "viewer@example.com", "anonymous": False},
+    )
+    assert guest.status_code == 200, guest.text
+    guest_headers = {"Authorization": f"Bearer {guest.json()['token']}"}
+    question = await client.get(f"/api/v1/sessions/{session['id']}/audience", headers=guest_headers)
+    assert question.status_code == 200, question.text
+
+    owner_snapshot = await client.get(f"/api/v1/sessions/{session['id']}/mirror", headers=auth_headers)
+    assert owner_snapshot.status_code == 200, owner_snapshot.text
+    body = owner_snapshot.json()
+    assert body["id"] == session["id"]
+    assert body["deck_id"] == deck_id
+    assert "presenter_notes" not in body["slides"][0]
+    assert "questions" not in body
+    assert "audience_count" not in body
+    assert "code" not in body
+    assert "owner_id" not in body
+    assert "interpret_quick_options" not in body
+
+    token = await _session_mirror_token(session["id"])
+    no_auth_with_token = await client.get(f"/api/v1/sessions/{session['id']}/mirror?token={token}")
+    assert no_auth_with_token.status_code == 403
+
+
+async def test_mirror_link_owner_endpoint_returns_relative_url_and_only_includes_token_for_link_mode(client, auth_headers):
+    deck = await _create_deck(client, auth_headers)
+    session = (
+        await client.post("/api/v1/sessions", json={"deck_id": deck["id"]}, headers=auth_headers)
+    ).json()
+
+    owner_link = await client.get(f"/api/v1/sessions/{session['id']}/mirror-link", headers=auth_headers)
+    assert owner_link.status_code == 200, owner_link.text
+    assert owner_link.json() == {
+        "url": f"/mirror/{session['id']}",
+        "token": None,
+        "access_mode": "owner",
+    }
+
+    mode = await client.patch(
+        f"/api/v1/decks/{deck['id']}/mirror-access",
+        json={"mode": "link", "allowed_emails": []},
+        headers=auth_headers,
+    )
+    assert mode.status_code == 200, mode.text
+    public_link = await client.get(f"/api/v1/sessions/{session['id']}/mirror-link", headers=auth_headers)
+    assert public_link.status_code == 200, public_link.text
+    body = public_link.json()
+    assert body["access_mode"] == "link"
+    assert body["token"]
+    assert body["url"] == f"/mirror/{session['id']}?token={body['token']}"
+
+
+async def test_mirror_allowed_mode_requires_signed_in_approved_allowed_email(
+    client, auth_headers, seeded_user, fake_supabase_auth
+):
+    from slaides.db import models
+    from slaides.db.base import get_session_factory
+
+    deck = await _create_deck(client, auth_headers)
+    allowed_user_id = uuid.UUID("11111111-2222-3333-4444-555555555555")
+    fake_supabase_auth.add_user(
+        email="allowed@example.com",
+        password="hunter2",
+        user_id=str(allowed_user_id),
+    )
+    factory = get_session_factory()
+    async with factory() as db:
+        db.add(
+            models.AppUser(
+                workspace_id=seeded_user["workspace_id"],
+                supabase_user_id=allowed_user_id,
+                email="allowed@example.com",
+                role="instructor",
+                approval_status="approved",
+                approved_at=datetime.now(timezone.utc),
+            )
+        )
+        await db.commit()
+
+    access = await client.patch(
+        f"/api/v1/decks/{deck['id']}/mirror-access",
+        json={"mode": "allowed", "allowed_emails": ["Allowed@Example.com"]},
+        headers=auth_headers,
+    )
+    assert access.status_code == 200, access.text
+    session = (
+        await client.post("/api/v1/sessions", json={"deck_id": deck["id"]}, headers=auth_headers)
+    ).json()
+
+    allowed_token = (
+        await client.post(
+            "/api/v1/auth/signin",
+            json={"email": "allowed@example.com", "password": "hunter2"},
+        )
+    ).json()["access"]
+    allowed = await client.get(
+        f"/api/v1/sessions/{session['id']}/mirror",
+        headers={"Authorization": f"Bearer {allowed_token}"},
+    )
+    assert allowed.status_code == 200, allowed.text
+
+    guest = await client.post(
+        "/api/v1/auth/guest",
+        json={"code": session["code"], "email": "allowed@example.com", "anonymous": False},
+    )
+    assert guest.status_code == 200, guest.text
+    guest_snapshot = await client.get(
+        f"/api/v1/sessions/{session['id']}/mirror",
+        headers={"Authorization": f"Bearer {guest.json()['token']}"},
+    )
+    assert guest_snapshot.status_code == 403
+
+
+async def test_mirror_link_mode_accepts_only_correct_token_without_auth(client, auth_headers):
+    deck = await _create_deck(client, auth_headers)
+    access = await client.patch(
+        f"/api/v1/decks/{deck['id']}/mirror-access",
+        json={"mode": "link", "allowed_emails": []},
+        headers=auth_headers,
+    )
+    assert access.status_code == 200, access.text
+    session = (
+        await client.post("/api/v1/sessions", json={"deck_id": deck["id"]}, headers=auth_headers)
+    ).json()
+    token = await _session_mirror_token(session["id"])
+
+    missing = await client.get(f"/api/v1/sessions/{session['id']}/mirror")
+    assert missing.status_code == 403
+    wrong = await client.get(f"/api/v1/sessions/{session['id']}/mirror?token=wrong")
+    assert wrong.status_code == 403
+    ok = await client.get(f"/api/v1/sessions/{session['id']}/mirror?token={token}")
+    assert ok.status_code == 200, ok.text
+
+
+async def test_mirror_snapshot_returns_410_for_ended_session(client, auth_headers):
+    deck = await _create_deck(client, auth_headers)
+    session = (
+        await client.post("/api/v1/sessions", json={"deck_id": deck["id"]}, headers=auth_headers)
+    ).json()
+    ended = await client.post(f"/api/v1/sessions/{session['id']}/end", headers=auth_headers)
+    assert ended.status_code == 200, ended.text
+
+    res = await client.get(f"/api/v1/sessions/{session['id']}/mirror", headers=auth_headers)
+    assert res.status_code == 410
 
 
 async def test_audience_snapshot_includes_interpret_quick_options(client, auth_headers):

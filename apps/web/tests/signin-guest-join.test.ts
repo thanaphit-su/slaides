@@ -8,10 +8,11 @@ import Signin from "@/pages/Signin.vue";
 import { useAuthStore } from "@/stores/auth";
 
 const push = vi.fn();
+let routeQuery: Record<string, string> = {};
 
 vi.mock("vue-router", () => ({
   useRouter: () => ({ push }),
-  useRoute: () => ({ query: {} }),
+  useRoute: () => ({ query: routeQuery }),
 }));
 
 vi.mock("@/api/auth", () => ({
@@ -32,6 +33,7 @@ vi.mock("@/api/sessions", () => ({
 describe("signed-in audience join", () => {
   beforeEach(async () => {
     localStorage.clear();
+    routeQuery = {};
     setActivePinia(createPinia());
     vi.clearAllMocks();
     vi.mocked(authApi.signIn).mockResolvedValue({
@@ -141,6 +143,32 @@ describe("signed-in audience join", () => {
     expect(authApi.signIn).toHaveBeenCalledWith("you@studio.press", "slaides");
     expect(sessionsApi.guestJoin).toHaveBeenCalledWith("SLD-NEXT", "you@studio.press", "Field Notes", false);
     expect(push).toHaveBeenCalledWith("/audience/sess-2");
+    expect(push).not.toHaveBeenCalledWith("/workspace");
+  });
+
+  it("returns signed-in instructors to the mirror next route", async () => {
+    const auth = useAuthStore();
+    auth.signOut();
+    routeQuery = { next: "/mirror/sess-1?token=mirror-token" };
+
+    const wrapper = mount(Signin, {
+      global: {
+        stubs: {
+          Wordmark: true,
+          Icon: true,
+          Toggle: true,
+        },
+      },
+    });
+    await nextTick();
+
+    await wrapper.get('input[type="email"]').setValue("you@studio.press");
+    await wrapper.get('input[type="password"]').setValue("slaides");
+    await wrapper.get("form").trigger("submit");
+    await flushPromises();
+
+    expect(authApi.signIn).toHaveBeenCalledWith("you@studio.press", "slaides");
+    expect(push).toHaveBeenCalledWith("/mirror/sess-1?token=mirror-token");
     expect(push).not.toHaveBeenCalledWith("/workspace");
   });
 });
