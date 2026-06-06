@@ -4,6 +4,7 @@ import { useRoute, useRouter } from "vue-router";
 import { useAuthStore } from "@/stores/auth";
 import { sessionsApi } from "@/api/sessions";
 import { saveGuestToken } from "@/stores/session";
+import { normalizeJoinCode } from "@/utils/joinCode";
 import Wordmark from "@/components/Wordmark.vue";
 import Icon from "@/components/Icon.vue";
 import Toggle from "@/components/Toggle.vue";
@@ -51,6 +52,15 @@ function instructorRedirectTarget(): string {
   return raw.startsWith("/") && !raw.startsWith("//") ? raw : "/workspace";
 }
 
+function onCodePaste(event: ClipboardEvent) {
+  const pasted = event.clipboardData?.getData("text");
+  if (!pasted) return;
+  const normalized = normalizeJoinCode(pasted);
+  if (normalized === pasted) return;
+  event.preventDefault();
+  code.value = normalized;
+}
+
 async function submitInstructor(e: Event) {
   e.preventDefault();
   try {
@@ -87,8 +97,9 @@ function setMode(m: "instructor" | "guest") {
 async function submitGuestCode(e: Event) {
   e.preventDefault();
   guestNotice.value = null;
+  code.value = normalizeJoinCode(code.value);
   try {
-    await sessionsApi.byCode(code.value.trim().toUpperCase());
+    await sessionsApi.byCode(code.value);
     step.value = "identity";
   } catch (err) {
     const msg = err instanceof Error ? err.message : "Could not find that session.";
@@ -122,7 +133,7 @@ async function joinSessionWithCurrentIdentity() {
           displayName: name.value,
         };
     const res = await sessionsApi.guestJoin(
-      code.value.trim().toUpperCase(),
+      normalizeJoinCode(code.value),
       joinIdentity.email,
       joinIdentity.displayName,
       anon.value,
@@ -309,6 +320,7 @@ async function joinSessionWithCurrentIdentity() {
               class="input"
               placeholder="SLD-XXXX-XX"
               v-model="code"
+              @paste="onCodePaste"
               required
               autofocus
               :style="{

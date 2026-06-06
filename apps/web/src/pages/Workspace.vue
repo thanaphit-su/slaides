@@ -5,6 +5,7 @@ import { useAuthStore } from "@/stores/auth";
 import { useWorkspaceStore } from "@/stores/workspace";
 import { sessionsApi } from "@/api/sessions";
 import { saveGuestToken } from "@/stores/session";
+import { normalizeJoinCode } from "@/utils/joinCode";
 import type { SessionListItem } from "@/api/types";
 import Wordmark from "@/components/Wordmark.vue";
 import Icon from "@/components/Icon.vue";
@@ -154,6 +155,15 @@ function toggleJoinMenu() {
   joinNotice.value = null;
 }
 
+function onJoinCodePaste(event: ClipboardEvent) {
+  const pasted = event.clipboardData?.getData("text");
+  if (!pasted) return;
+  const normalized = normalizeJoinCode(pasted);
+  if (normalized === pasted) return;
+  event.preventDefault();
+  joinCode.value = normalized;
+}
+
 async function submitJoinSession(e: Event) {
   e.preventDefault();
   const user = auth.user;
@@ -163,9 +173,10 @@ async function submitJoinSession(e: Event) {
   }
   joinBusy.value = true;
   joinNotice.value = null;
+  joinCode.value = normalizeJoinCode(joinCode.value);
   try {
     const res = await sessionsApi.guestJoin(
-      joinCode.value.trim().toUpperCase(),
+      joinCode.value,
       user.email,
       user.display_name || user.email,
       joinAnon.value,
@@ -357,6 +368,7 @@ const heroKicker = computed(() => {
                 data-testid="workspace-join-code-input"
                 placeholder="SLD-XXXX-XX"
                 v-model="joinCode"
+                @paste="onJoinCodePaste"
                 required
                 autofocus
               />

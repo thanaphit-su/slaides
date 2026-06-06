@@ -106,6 +106,38 @@ describe("signed-in audience join", () => {
     expect(wrapper.text()).not.toContain("Welcome back.");
   });
 
+  it("normalizes pasted join links on the session-code step", async () => {
+    vi.mocked(sessionsApi.byCode).mockResolvedValue({
+      id: "sess-1",
+      code: "SLD-2K4F-92",
+      deck_title: "Deck",
+      started_at: "2026-06-06T00:00:00Z",
+      ended_at: null,
+    });
+    const wrapper = mount(Signin, {
+      props: { startGuest: true },
+      global: {
+        stubs: {
+          Wordmark: true,
+          Icon: true,
+          Toggle: true,
+        },
+      },
+    });
+    await nextTick();
+
+    const codeInput = wrapper.get('input[placeholder="SLD-XXXX-XX"]');
+    await codeInput.trigger("paste", {
+      clipboardData: { getData: () => "http://slides.example/j/sld-2k4f-92" },
+    });
+    await nextTick();
+    expect((codeInput.element as HTMLInputElement).value).toBe("SLD-2K4F-92");
+    await wrapper.get("form").trigger("submit");
+    await flushPromises();
+
+    expect(sessionsApi.byCode).toHaveBeenCalledWith("SLD-2K4F-92");
+  });
+
   it("joins the linked session immediately after signing in from a join URL", async () => {
     const auth = useAuthStore();
     auth.signOut();
@@ -144,6 +176,51 @@ describe("signed-in audience join", () => {
     expect(sessionsApi.guestJoin).toHaveBeenCalledWith("SLD-NEXT", "you@studio.press", "Field Notes", false);
     expect(push).toHaveBeenCalledWith("/audience/sess-2");
     expect(push).not.toHaveBeenCalledWith("/workspace");
+  });
+
+  it("normalizes pasted join links before joining with identity", async () => {
+    vi.mocked(sessionsApi.byCode).mockResolvedValue({
+      id: "sess-3",
+      code: "SLD-2K4F-92",
+      deck_title: "Deck",
+      started_at: "2026-06-06T00:00:00Z",
+      ended_at: null,
+    });
+    vi.mocked(sessionsApi.guestJoin).mockResolvedValue({
+      session_id: "sess-3",
+      participant_id: "participant-3",
+      participant_ref: "ref-3",
+      token: "guest-token-3",
+      display_name: "Guest",
+      anon: false,
+    });
+    const auth = useAuthStore();
+    auth.signOut();
+    const wrapper = mount(Signin, {
+      props: { startGuest: true },
+      global: {
+        stubs: {
+          Wordmark: true,
+          Icon: true,
+          Toggle: true,
+        },
+      },
+    });
+    await nextTick();
+
+    await wrapper.get('input[placeholder="SLD-XXXX-XX"]').trigger("paste", {
+      clipboardData: { getData: () => "http://slides.example/j/sld-2k4f-92" },
+    });
+    await nextTick();
+    await wrapper.get("form").trigger("submit");
+    await flushPromises();
+
+    await wrapper.get('input[type="email"]').setValue("guest@example.com");
+    await wrapper.get('input[placeholder="e.g. Sara K."]').setValue("Guest");
+    await wrapper.get('[data-testid="guest-identity-form"]').trigger("submit");
+    await flushPromises();
+
+    expect(sessionsApi.guestJoin).toHaveBeenCalledWith("SLD-2K4F-92", "guest@example.com", "Guest", false);
   });
 
   it("returns signed-in instructors to the mirror next route", async () => {

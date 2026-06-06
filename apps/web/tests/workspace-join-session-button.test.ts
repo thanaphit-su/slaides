@@ -1,6 +1,7 @@
 import { mount } from "@vue/test-utils";
 import { createPinia, setActivePinia } from "pinia";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { nextTick } from "vue";
 import { authApi } from "@/api/auth";
 import { decksApi } from "@/api/decks";
 import { sessionsApi } from "@/api/sessions";
@@ -97,7 +98,12 @@ describe("workspace join session button", () => {
     expect(push).not.toHaveBeenCalledWith("/join");
     expect(wrapper.get('[data-testid="workspace-join-menu"]').text()).toContain("Session code");
 
-    await wrapper.get('[data-testid="workspace-join-code-input"]').setValue("sld-2k4f-92");
+    const codeInput = wrapper.get('[data-testid="workspace-join-code-input"]');
+    await codeInput.trigger("paste", {
+      clipboardData: { getData: () => "http://slides.example/j/sld-2k4f-92" },
+    });
+    await nextTick();
+    expect((codeInput.element as HTMLInputElement).value).toBe("SLD-2K4F-92");
     await wrapper.get('[data-testid="workspace-join-anonymous-toggle"]').setValue(true);
     await wrapper.get('[data-testid="workspace-join-form"]').trigger("submit");
 
