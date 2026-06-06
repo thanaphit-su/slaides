@@ -185,12 +185,23 @@ async function copyCode() {
   }
 }
 
-async function copyMirrorLink() {
+async function copyMirrorLink(event?: MouseEvent) {
   if (!session.snapshot) return;
+  const openInNewTab = !!event?.ctrlKey || !!event?.metaKey;
+  const tab = openInNewTab ? window.open("about:blank", "_blank") : null;
   mirrorBusy.value = true;
   try {
     const link = await sessionsApi.mirrorLink(session.snapshot.id);
     const absolute = new URL(link.url, window.location.origin).toString();
+    if (openInNewTab) {
+      if (tab) {
+        tab.opener = null;
+        tab.location.href = absolute;
+      } else {
+        window.open(absolute, "_blank", "noopener,noreferrer");
+      }
+      return;
+    }
     await navigator.clipboard.writeText(absolute);
     mirrorCopied.value = true;
     window.setTimeout(() => (mirrorCopied.value = false), 1500);

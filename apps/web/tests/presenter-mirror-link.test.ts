@@ -61,6 +61,7 @@ const snapshot: SessionSnapshot = {
 
 describe("Presenter mirror link", () => {
   let originalWS: typeof WebSocket;
+  const open = vi.fn(() => null);
   const writeText = vi.fn(async () => undefined);
 
   beforeEach(() => {
@@ -76,6 +77,7 @@ describe("Presenter mirror link", () => {
       value: new URL("https://slides.example/present/sess-1"),
       configurable: true,
     });
+    vi.spyOn(window, "open").mockImplementation(open as unknown as typeof window.open);
     const auth = useAuthStore();
     auth.access = "host-token";
     vi.spyOn(sessionsApi, "get").mockResolvedValue(structuredClone(snapshot));
@@ -90,6 +92,7 @@ describe("Presenter mirror link", () => {
     globalThis.WebSocket = originalWS;
     vi.restoreAllMocks();
     writeText.mockClear();
+    open.mockClear();
   });
 
   it("copies an absolute mirror URL from the presenter toolbar", async () => {
@@ -131,5 +134,51 @@ describe("Presenter mirror link", () => {
 
     expect(sessionsApi.mirrorLink).toHaveBeenCalledWith("sess-1");
     expect(writeText).toHaveBeenCalledWith("https://slides.example/mirror/sess-1?token=mirror-token");
+  });
+
+  it("opens the mirror URL in a new tab on ctrl-click", async () => {
+    const router = createRouter({
+      history: createMemoryHistory(),
+      routes: [
+        { path: "/present/:sessionId", name: "presenter", component: Presenter, props: true },
+        { path: "/signin", name: "signin", component: { template: "<div />" } },
+        { path: "/workspace", name: "workspace", component: { template: "<div />" } },
+      ],
+    });
+    await router.push("/present/sess-1");
+    await router.isReady();
+
+    const wrapper = mount(Presenter, {
+      props: { sessionId: "sess-1" },
+      global: {
+        plugins: [router],
+        stubs: {
+          AccountMenu: true,
+          AnswerModerationRail: true,
+          LiveInteractionSheet: true,
+          LivePollSlide: true,
+          LiveQuestionSlide: true,
+          LiveRandomAudienceSlide: true,
+          OpenInteractionFab: true,
+          PresenterRail: true,
+          SlideStage: true,
+          Wordmark: true,
+        },
+      },
+    });
+    await flushPromises();
+
+    const mirrorButton = wrapper.findAll("button").find((button) => button.text().includes("Mirror"));
+    expect(mirrorButton).toBeTruthy();
+    await mirrorButton!.trigger("click", { ctrlKey: true });
+    await flushPromises();
+
+    expect(sessionsApi.mirrorLink).toHaveBeenCalledWith("sess-1");
+    expect(open).toHaveBeenCalledWith(
+      "https://slides.example/mirror/sess-1?token=mirror-token",
+      "_blank",
+      "noopener,noreferrer",
+    );
+    expect(writeText).not.toHaveBeenCalled();
   });
 });
