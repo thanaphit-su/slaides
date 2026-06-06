@@ -91,6 +91,8 @@ class Deck(Base):
     subtitle: Mapped[str | None] = mapped_column(String(500), nullable=True)
     cover: Mapped[str | None] = mapped_column(String(120), nullable=True)
     manifest: Mapped[dict] = mapped_column(JSON, default=dict)
+    mirror_access_mode: Mapped[str] = mapped_column(String(24), nullable=False, server_default="owner")
+    mirror_allowed_emails: Mapped[list] = mapped_column(JSON, nullable=False, default=list, server_default="[]")
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
@@ -257,6 +259,7 @@ class Session(Base):
     # NB: no FK — can hold a deck slide.id OR a session_slide.id (FAB-inserted interaction slide).
     current_slide_id: Mapped[uuid.UUID | None] = mapped_column(GUID(), nullable=True)
     config: Mapped[dict] = mapped_column(JSON, default=dict)
+    mirror_token: Mapped[str | None] = mapped_column(String(64), nullable=True, index=True)
     started_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     ended_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     is_preview: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)

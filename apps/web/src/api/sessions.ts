@@ -1,6 +1,8 @@
 import { api } from "./client";
 import type {
   GuestJoinResponse,
+  MirrorLink,
+  MirrorSessionSnapshot,
   OpenAnswer,
   PollChoice,
   PreviewSessionResponse,
@@ -27,6 +29,11 @@ export const sessionsApi = {
     api<SessionSnapshot>(`/sessions/${id}/audience`, {
       headers: { Authorization: `Bearer ${guestToken}` },
     }),
+  mirrorLink: (id: string) => api<MirrorLink>(`/sessions/${id}/mirror-link`),
+  mirrorSnapshot: (id: string, token?: string | null) =>
+    api<MirrorSessionSnapshot>(
+      `/sessions/${id}/mirror${token ? `?token=${encodeURIComponent(token)}` : ""}`,
+    ),
   end: (id: string) => api<SessionSnapshot>(`/sessions/${id}/end`, { method: "POST" }),
   remove: (id: string) => api<void>(`/sessions/${id}`, { method: "DELETE" }),
   advance: (id: string, slideId: string, isSessionSlide = false) =>

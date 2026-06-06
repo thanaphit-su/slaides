@@ -5,11 +5,13 @@ import secrets
 import uuid
 
 from fastapi import APIRouter, Depends, HTTPException, Response, status
+from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from sqlalchemy import delete, func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..auth.deps import GuestPrincipal, current_guest, current_user
-from ..auth.service import issue_guest
+from ..auth.service import issue_guest, sync_supabase_user
+from ..auth.supabase import get_supabase_auth
 from ..db.deps import db_session
 from ..db.models import AppUser, Deck, InteractionLog, LlmCall, LlmInterpretCache, Participant, Slide, Workspace
 from ..db.models import Session as SessionRow
@@ -19,6 +21,9 @@ from . import service
 from . import placement_state_service
 from .schemas import (
     InteractionPatch,
+    MirrorLinkOut,
+    MirrorSessionSnapshot,
+    MirrorSlideOut,
     OpenAnswerOut,
     OpenInteractionRequest,
     ParticipantOut,
@@ -45,6 +50,7 @@ _PREVIEW_DISPLAY_NAMES = (
     "Alice", "Bob", "Carol", "Dave", "Erin", "Frank",
     "Grace", "Heidi", "Ivan", "Judy", "Mallory", "Niaj",
 )
+_bearer = HTTPBearer(auto_error=False)
 
 router = APIRouter(prefix="/sessions", tags=["sessions"])
 
@@ -120,6 +126,81 @@ async def _snapshot(
             PlacementStateOut(**placement_state_service.project_for_snapshot(p))
             for p in placement_states
         ],
+    )
+
+
+def _mirror_token_valid(row: SessionRow, token: str | None) -> bool:
+    if not row.mirror_token or not token:
+        return False
+    return secrets.compare_digest(row.mirror_token, token)
+
+
+async def _optional_signed_in_user(
+    creds: HTTPAuthorizationCredentials | None,
+    session: AsyncSession,
+) -> AppUser | None:
+    if creds is None or not creds.credentials:
+        return None
+    try:
+        supabase_user_id, email = await get_supabase_auth().get_user(creds.credentials)
+        user_uuid = uuid.UUID(supabase_user_id)
+    except Exception:  # noqa: BLE001
+        return None
+    user = await sync_supabase_user(
+        session,
+        supabase_user_id=user_uuid,
+        email=email,
+        display_name=None,
+        default_status="pending",
+    )
+    if user.approval_status != "approved":
+        return None
+    return user
+
+
+def _can_view_mirror(row: SessionRow, deck: Deck, user: AppUser | None, token: str | None) -> bool:
+    mode = deck.mirror_access_mode or "owner"
+    is_owner = user is not None and user.id == row.owner_id
+    if mode == "owner":
+        return is_owner
+    if mode == "allowed":
+        if is_owner:
+            return True
+        if user is None:
+            return False
+        allowed = {str(email).strip().lower() for email in (deck.mirror_allowed_emails or [])}
+        return user.email.strip().lower() in allowed
+    if mode == "link":
+        return is_owner or _mirror_token_valid(row, token)
+    return False
+
+
+async def _mirror_snapshot(session: AsyncSession, row: SessionRow) -> MirrorSessionSnapshot:
+    full = await _snapshot(session, row, viewer="audience")
+    slides = [
+        MirrorSlideOut(
+            id=s.id,
+            deck_id=s.deck_id,
+            section_id=s.section_id,
+            position=s.position,
+            kicker=s.kicker,
+            markdown=s.markdown,
+            updated_at=s.updated_at,
+            widgets=s.widgets,
+        )
+        for s in full.slides
+    ]
+    return MirrorSessionSnapshot(
+        id=full.id,
+        deck_id=full.deck_id,
+        deck_title=full.deck_title,
+        started_at=full.started_at,
+        ended_at=full.ended_at,
+        current_slide_id=full.current_slide_id,
+        sections=full.sections,
+        slides=slides,
+        session_slides=full.session_slides,
+        placement_states=full.placement_states,
     )
 
 
@@ -259,6 +340,47 @@ async def get_audience_snapshot(
     if row is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="session not found")
     return await _snapshot(session, row, viewer="audience")
+
+
+@router.get("/{session_id}/mirror-link", response_model=MirrorLinkOut)
+async def get_mirror_link(
+    session_id: uuid.UUID,
+    user: AppUser = Depends(current_user),
+    session: AsyncSession = Depends(db_session),
+) -> MirrorLinkOut:
+    row = await _load_owned(session, user, session_id)
+    deck = (await session.execute(select(Deck).where(Deck.id == row.deck_id))).scalar_one()
+    token = row.mirror_token or service.generate_mirror_token()
+    row.mirror_token = token
+    await session.flush()
+    mode = deck.mirror_access_mode or "owner"
+    query = f"?token={token}" if mode == "link" else ""
+    return MirrorLinkOut(
+        url=f"/mirror/{row.id}{query}",
+        token=token if mode == "link" else None,
+        access_mode=mode,
+    )
+
+
+@router.get("/{session_id}/mirror", response_model=MirrorSessionSnapshot)
+async def get_mirror_snapshot(
+    session_id: uuid.UUID,
+    token: str | None = None,
+    creds: HTTPAuthorizationCredentials | None = Depends(_bearer),
+    session: AsyncSession = Depends(db_session),
+) -> MirrorSessionSnapshot:
+    row = (
+        await session.execute(select(SessionRow).where(SessionRow.id == session_id))
+    ).scalar_one_or_none()
+    if row is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="session not found")
+    if row.ended_at is not None:
+        raise HTTPException(status_code=status.HTTP_410_GONE, detail="session ended")
+    deck = (await session.execute(select(Deck).where(Deck.id == row.deck_id))).scalar_one()
+    user = await _optional_signed_in_user(creds, session)
+    if not _can_view_mirror(row, deck, user, token):
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="mirror access denied")
+    return await _mirror_snapshot(session, row)
 
 
 @router.get("/{session_id}", response_model=SessionSnapshot)

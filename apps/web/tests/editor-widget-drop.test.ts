@@ -70,6 +70,7 @@ function emptyDeck(): Deck {
     updated_at: "2026-05-22T00:00:00Z",
     sections: [{ id: "section-1", title: "Section", position: 0 }],
     slides: [slide({ id: "slide-a", position: 0, markdown: "# A" })],
+    mirror_access: { mode: "owner", allowed_emails: [] },
   };
 }
 

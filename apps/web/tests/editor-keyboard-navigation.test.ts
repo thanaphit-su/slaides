@@ -73,6 +73,7 @@ function deck(): Deck {
       slide({ id: "slide-a", position: 0, markdown: "# A" }),
       slide({ id: "slide-b", position: 1, markdown: "# B" }),
     ],
+    mirror_access: { mode: "owner", allowed_emails: [] },
   };
 }
 

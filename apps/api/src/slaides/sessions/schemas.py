@@ -6,7 +6,7 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
-from ..decks.schemas import SectionOut, SlideOut
+from ..decks.schemas import SectionOut, SlideOut, SlideWidgetEmbed
 from ..workspace.schemas import InterpretQuickOption
 
 
@@ -110,6 +110,36 @@ class SessionSnapshot(BaseModel):
     audience_count: int
     interpret_quick_options: list[InterpretQuickOption] = Field(default_factory=list)
     placement_states: list[PlacementStateOut] = []
+
+
+class MirrorSlideOut(BaseModel):
+    id: uuid.UUID
+    deck_id: uuid.UUID
+    section_id: uuid.UUID | None
+    position: int
+    kicker: str | None
+    markdown: str
+    updated_at: datetime
+    widgets: list[SlideWidgetEmbed] = Field(default_factory=list)
+
+
+class MirrorSessionSnapshot(BaseModel):
+    id: uuid.UUID
+    deck_id: uuid.UUID
+    deck_title: str
+    started_at: datetime
+    ended_at: datetime | None
+    current_slide_id: uuid.UUID | None
+    sections: list[SectionOut]
+    slides: list[MirrorSlideOut]
+    session_slides: list[SessionSlideOut]
+    placement_states: list[PlacementStateOut] = Field(default_factory=list)
+
+
+class MirrorLinkOut(BaseModel):
+    url: str
+    token: str | None = None
+    access_mode: Literal["owner", "allowed", "link"]
 
 
 class PreviewSessionRequest(BaseModel):

@@ -156,6 +156,11 @@ const currentSessionSlide = computed(() => {
   return snap.session_slides.find((s) => s.id === session.audienceCurrentSlideId) || null;
 });
 
+const interpretQuickOptions = computed(() => {
+  const snap = session.snapshot;
+  return snap && "interpret_quick_options" in snap ? snap.interpret_quick_options || [] : [];
+});
+
 const audienceStepPosition = computed(() => (session.audienceStepIndex >= 0 ? session.audienceStepIndex + 1 : 0));
 const audienceStepTotal = computed(() => session.audiencePassedSlides.length);
 // Audiences can only navigate within the slides the presenter has already
@@ -266,7 +271,7 @@ function showToast(message: string) {
           slide_id: currentDeckSlide.id,
           deck_title: session.snapshot?.deck_title,
         }"
-        :interpret-quick-options="session.snapshot?.interpret_quick_options || []"
+        :interpret-quick-options="interpretQuickOptions"
         :participant="{
           display_name: guest?.display_name ?? null,
           anon: guest?.anon ?? false,

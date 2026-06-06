@@ -45,6 +45,12 @@ export const router = createRouter({
       props: true,
     },
     {
+      path: "/mirror/:sessionId",
+      name: "mirror",
+      component: () => import("@/pages/Mirror.vue"),
+      props: true,
+    },
+    {
       path: "/decks/:deckId/preview",
       name: "deck-preview",
       component: () => import("@/pages/Preview.vue"),

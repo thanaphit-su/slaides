@@ -122,6 +122,13 @@ export interface WidgetSummary {
   behavior: WidgetBehavior;
 }
 
+export type MirrorAccessMode = "owner" | "allowed" | "link";
+
+export interface MirrorAccessSettings {
+  mode: MirrorAccessMode;
+  allowed_emails: string[];
+}
+
 export interface Deck {
   id: string;
   title: string;
@@ -132,6 +139,7 @@ export interface Deck {
   updated_at: string;
   sections: Section[];
   slides: Slide[];
+  mirror_access: MirrorAccessSettings;
 }
 
 export interface DeckListItem {
@@ -324,6 +332,27 @@ export interface SessionSnapshot {
   /** Widgets v2 Step 4 — current state for every Loud iframe widget placed
    * on this session's deck. Empty until any audience contributes. */
   placement_states?: PlacementState[];
+}
+
+export type MirrorSlide = Omit<Slide, "presenter_notes">;
+
+export interface MirrorSessionSnapshot {
+  id: string;
+  deck_id: string;
+  deck_title: string;
+  started_at: string;
+  ended_at: string | null;
+  current_slide_id: string | null;
+  sections: Section[];
+  slides: MirrorSlide[];
+  session_slides: SessionSlide[];
+  placement_states: PlacementState[];
+}
+
+export interface MirrorLink {
+  url: string;
+  token: string | null;
+  access_mode: MirrorAccessMode;
 }
 
 export interface GuestJoinResponse {

@@ -1,5 +1,5 @@
 import { api, apiBlob } from "./client";
-import type { Deck, DeckListItem, Section, Slide, SlideMutationResult } from "./types";
+import type { Deck, DeckListItem, MirrorAccessSettings, Section, Slide, SlideMutationResult } from "./types";
 
 export const sectionsApi = {
   create: (deckId: string, title: string, position?: number) =>
@@ -28,6 +28,11 @@ export const decksApi = {
   get: (id: string) => api<Deck>(`/decks/${id}`),
   patch: (id: string, patch: { title?: string; subtitle?: string; manifest?: Record<string, unknown> }) =>
     api<Deck>(`/decks/${id}`, { method: "PATCH", body: patch }),
+  updateMirrorAccess: (id: string, settings: MirrorAccessSettings) =>
+    api<MirrorAccessSettings>(`/decks/${id}/mirror-access`, {
+      method: "PATCH",
+      body: settings,
+    }),
   remove: (id: string) => api<void>(`/decks/${id}`, { method: "DELETE" }),
   duplicate: (id: string) => api<Deck>(`/decks/${id}/duplicate`, { method: "POST" }),
 

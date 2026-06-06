@@ -2,8 +2,9 @@ from __future__ import annotations
 
 import uuid
 from datetime import datetime
+from typing import Literal
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 
 class SlideWidgetRevisionEmbed(BaseModel):
@@ -42,6 +43,30 @@ class SlideOut(BaseModel):
     presenter_notes: str | None = None
     updated_at: datetime
     widgets: list[SlideWidgetEmbed] = []
+
+
+MirrorAccessMode = Literal["owner", "allowed", "link"]
+
+
+class MirrorAccessSettings(BaseModel):
+    mode: MirrorAccessMode = "owner"
+    allowed_emails: list[str] = Field(default_factory=list)
+
+    @field_validator("allowed_emails")
+    @classmethod
+    def _clean_emails(cls, value: list[str]) -> list[str]:
+        cleaned: list[str] = []
+        seen: set[str] = set()
+        for raw in value:
+            email = raw.strip().lower()
+            if not email:
+                continue
+            if "@" not in email:
+                raise ValueError(f"invalid email: {raw}")
+            if email not in seen:
+                cleaned.append(email)
+                seen.add(email)
+        return cleaned[:100]
 
 
 class SectionOut(BaseModel):
@@ -98,6 +123,7 @@ class DeckOut(BaseModel):
     manifest: dict
     created_at: datetime
     updated_at: datetime
+    mirror_access: MirrorAccessSettings
     sections: list[SectionOut]
     slides: list[SlideOut]
 

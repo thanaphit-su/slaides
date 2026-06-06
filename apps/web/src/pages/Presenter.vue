@@ -2,6 +2,7 @@
 import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import { maybeReceivePreviewAuth } from "@/preview/handshake";
 import { useRouter } from "vue-router";
+import { sessionsApi } from "@/api/sessions";
 import { useAuthStore } from "@/stores/auth";
 import { useSessionStore } from "@/stores/session";
 import { useWidgetsStore } from "@/stores/widgets";
@@ -16,6 +17,7 @@ import LivePollSlide from "@/components/LivePollSlide.vue";
 import LiveQuestionSlide from "@/components/LiveQuestionSlide.vue";
 import LiveRandomAudienceSlide from "@/components/LiveRandomAudienceSlide.vue";
 import AnswerModerationRail from "@/components/AnswerModerationRail.vue";
+import type { SessionSnapshot } from "@/api/types";
 
 const props = defineProps<{ sessionId: string }>();
 const router = useRouter();
@@ -28,6 +30,8 @@ const widgetsStore = useWidgetsStore();
 // triage incoming questions.
 const railOpen = ref(false);
 const copied = ref(false);
+const mirrorCopied = ref(false);
+const mirrorBusy = ref(false);
 const endConfirmOpen = ref(false);
 const endingBusy = ref(false);
 
@@ -118,6 +122,17 @@ const currentSessionSlide = computed(() => {
   return snap.session_slides.find((s) => s.id === snap.current_slide_id) || null;
 });
 
+const fullSnapshot = computed<SessionSnapshot | null>(() => {
+  const snap = session.snapshot;
+  return snap && "questions" in snap ? snap : null;
+});
+
+const presenterNotes = computed<string | null>(() => {
+  const slide = currentDeckSlide.value;
+  const notes = slide && "presenter_notes" in slide ? slide.presenter_notes : null;
+  return typeof notes === "string" ? notes : null;
+});
+
 const presentationOrder = computed(() => {
   const snap = session.snapshot;
   if (!snap) return [];
@@ -155,11 +170,11 @@ const canGoNext = computed(
 );
 
 const unanswered = computed(
-  () => session.snapshot?.questions.filter((q) => !q.answered_at).length ?? 0,
+  () => fullSnapshot.value?.questions.filter((q) => !q.answered_at).length ?? 0,
 );
 
 async function copyCode() {
-  const code = session.snapshot?.code;
+  const code = fullSnapshot.value?.code;
   if (!code) return;
   try {
     await navigator.clipboard.writeText(`${window.location.origin}/j/${code}`);
@@ -167,6 +182,20 @@ async function copyCode() {
     window.setTimeout(() => (copied.value = false), 1500);
   } catch {
     // ignore
+  }
+}
+
+async function copyMirrorLink() {
+  if (!session.snapshot) return;
+  mirrorBusy.value = true;
+  try {
+    const link = await sessionsApi.mirrorLink(session.snapshot.id);
+    const absolute = new URL(link.url, window.location.origin).toString();
+    await navigator.clipboard.writeText(absolute);
+    mirrorCopied.value = true;
+    window.setTimeout(() => (mirrorCopied.value = false), 1500);
+  } finally {
+    mirrorBusy.value = false;
   }
 }
 
@@ -371,7 +400,17 @@ watch(
         </button>
         <button class="btn btn-sm" @click="copyCode">
           <Icon name="copy" :size="14" />
-          {{ copied ? "Copied" : session.snapshot?.code || "…" }}
+          {{ copied ? "Copied" : fullSnapshot?.code || "…" }}
+        </button>
+        <button
+          v-if="!inPreviewIframe"
+          class="btn btn-sm"
+          :disabled="mirrorBusy"
+          @click="copyMirrorLink"
+          title="Copy mirror link"
+        >
+          <Icon name="copy" :size="14" />
+          {{ mirrorCopied ? "Mirror copied" : "Mirror" }}
         </button>
         <AccountMenu
           v-if="!inPreviewIframe"
@@ -403,7 +442,7 @@ watch(
             slide_id: currentDeckSlide.id,
             deck_title: session.snapshot?.deck_title,
           }"
-          :interpret-quick-options="session.snapshot?.interpret_quick_options || []"
+          :interpret-quick-options="fullSnapshot?.interpret_quick_options || []"
           @widget-event="(e) => session.forwardWidgetEvent(e.placement, { type: e.type, payload: e.payload })"
         />
         <LivePollSlide
@@ -458,8 +497,8 @@ watch(
       />
       <PresenterRail
         v-else-if="railOpen"
-        :notes="currentDeckSlide?.presenter_notes ?? null"
-        :questions="session.snapshot?.questions || []"
+        :notes="presenterNotes"
+        :questions="fullSnapshot?.questions || []"
         @answer="(id) => session.markAnswered(id)"
       />
     </div>

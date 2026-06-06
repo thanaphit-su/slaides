@@ -6,6 +6,7 @@ import { useAuthStore } from "@/stores/auth";
 import type {
   GuestJoinResponse,
   InterpretQuickOption,
+  MirrorSessionSnapshot,
   OpenAnswer,
   PlacementState,
   SessionQuestion,
@@ -21,7 +22,7 @@ function apiBase(): string {
   return import.meta.env.VITE_API_URL || "/api/v1";
 }
 
-function wsUrl(sessionId: string, token: string): string {
+function wsUrl(sessionId: string, token: string, mode?: "host" | "audience" | "mirror"): string {
   const base = apiBase();
   // VITE_API_URL is like "http://localhost:8000/api/v1"; strip the /api/v1 to get host root.
   const root = base.replace(/\/api\/v1\/?$/, "");
@@ -32,7 +33,12 @@ function wsUrl(sessionId: string, token: string): string {
     httpRoot = `${window.location.protocol}//${window.location.host}`;
   }
   const wsRoot = httpRoot.replace(/^http/, "ws");
-  return `${wsRoot}/ws/sessions/${sessionId}?token=${encodeURIComponent(token)}`;
+  const roleQuery = mode === "mirror" ? "&role=mirror" : "";
+  return `${wsRoot}/ws/sessions/${sessionId}?token=${encodeURIComponent(token)}${roleQuery}`;
+}
+
+function hasQuestions(snap: unknown): snap is SessionSnapshot {
+  return !!snap && typeof snap === "object" && "questions" in snap;
 }
 
 export function loadGuestToken(sessionId: string): GuestJoinResponse | null {
@@ -54,8 +60,8 @@ export function clearGuestToken(sessionId: string): void {
 }
 
 export const useSessionStore = defineStore("session", () => {
-  const snapshot = ref<SessionSnapshot | null>(null);
-  const role = ref<"host" | "audience" | null>(null);
+  const snapshot = ref<SessionSnapshot | MirrorSessionSnapshot | null>(null);
+  const role = ref<"host" | "audience" | "mirror" | null>(null);
   const connected = ref(false);
   const ended = ref(false);
   const audienceCount = ref(0);
@@ -76,6 +82,7 @@ export const useSessionStore = defineStore("session", () => {
   let currentSessionId: string | null = null;
   let currentToken: string | null = null;
   let currentAudienceGuest: { sessionId: string; guest: GuestJoinResponse } | null = null;
+  let currentMirrorToken: string | null = null;
 
   const currentSlideId = computed(() => snapshot.value?.current_slide_id ?? null);
 
@@ -190,13 +197,14 @@ export const useSessionStore = defineStore("session", () => {
   }
 
   function setInterpretQuickOptions(options: InterpretQuickOption[]): void {
-    if (!snapshot.value) return;
+    if (!hasQuestions(snapshot.value)) return;
     snapshot.value.interpret_quick_options = options;
   }
 
   async function loadHost(sessionId: string): Promise<void> {
     snapshot.value = await sessionsApi.get(sessionId);
     audienceCount.value = snapshot.value.audience_count;
+    ended.value = !!snapshot.value.ended_at;
     seedPlacementStates();
   }
 
@@ -227,7 +235,17 @@ export const useSessionStore = defineStore("session", () => {
     }
     snapshot.value = await sessionsApi.audienceSnapshot(sessionId, guest.token);
     audienceCount.value = snapshot.value.audience_count;
+    ended.value = !!snapshot.value.ended_at;
     resetAudienceProgress();
+    seedPlacementStates();
+  }
+
+  async function loadMirror(sessionId: string, token?: string | null): Promise<void> {
+    snapshot.value = await sessionsApi.mirrorSnapshot(sessionId, token);
+    audienceCount.value = 0;
+    ended.value = !!snapshot.value.ended_at;
+    audienceSlideId.value = null;
+    passedSlideIds.value = [];
     seedPlacementStates();
   }
 
@@ -256,13 +274,13 @@ export const useSessionStore = defineStore("session", () => {
         else snapshot.value.session_slides.push(payload);
       },
       "question.new": (payload: SessionQuestion) => {
-        if (!snapshot.value) return;
+        if (!hasQuestions(snapshot.value)) return;
         if (!snapshot.value.questions.find((q) => q.id === payload.id)) {
           snapshot.value.questions.push(payload);
         }
       },
       "question.answered": (payload) => {
-        if (!snapshot.value) return;
+        if (!hasQuestions(snapshot.value)) return;
         const q = snapshot.value.questions.find((qq) => qq.id === payload.question_id);
         if (q) q.answered_at = new Date().toISOString();
       },
@@ -369,6 +387,7 @@ export const useSessionStore = defineStore("session", () => {
         }
       },
       "question_answer.new": (payload) => {
+        if (role.value !== "host") return;
         const slideId: string | undefined = payload?.session_slide_id;
         const answer: OpenAnswer | undefined = payload?.answer;
         if (!slideId || !answer) return;
@@ -439,9 +458,10 @@ export const useSessionStore = defineStore("session", () => {
   let beforeUnloadHandler: ((ev: BeforeUnloadEvent) => void) | null = null;
 
   function connect(
-    mode: "host" | "audience",
+    mode: "host" | "audience" | "mirror",
     sessionId: string,
     guestOverride?: GuestJoinResponse | null,
+    mirrorToken?: string | null,
   ): void {
     intentionallyClosed = false;
     role.value = mode;
@@ -450,15 +470,21 @@ export const useSessionStore = defineStore("session", () => {
     let token: string | null = null;
     if (mode === "host") {
       currentAudienceGuest = null;
+      currentMirrorToken = null;
       token = useAuthStore().access;
-    } else {
+    } else if (mode === "audience") {
+      currentMirrorToken = null;
       const guest = resolveAudienceGuest(sessionId, guestOverride);
       token = guest?.token ?? null;
+    } else {
+      currentAudienceGuest = null;
+      currentMirrorToken = mirrorToken ?? currentMirrorToken;
+      token = currentMirrorToken || useAuthStore().access;
     }
     if (!token) return;
     currentToken = token;
 
-    const socket = new WebSocket(wsUrl(sessionId, token));
+    const socket = new WebSocket(wsUrl(sessionId, token, mode));
     ws.value = socket;
     const handlers = buildHandlers();
 
@@ -512,7 +538,7 @@ export const useSessionStore = defineStore("session", () => {
       if (!sid || !r) return;
       window.setTimeout(async () => {
         if (intentionallyClosed) return;
-        if (r === "host") {
+        if (r === "host" || (r === "mirror" && !currentMirrorToken)) {
           // Access token may have expired during the WS pause. Refresh
           // through the standard auth endpoint so connect() reads a
           // fresh access from the auth store before re-handshaking.
@@ -522,7 +548,11 @@ export const useSessionStore = defineStore("session", () => {
             // ignore — connect() will read whatever the store currently has
           }
         }
-        if (!intentionallyClosed) connect(r, sid);
+        if (!intentionallyClosed) {
+          if (r === "audience") connect(r, sid, currentAudienceGuest?.guest ?? null);
+          else if (r === "mirror") connect(r, sid, null, currentMirrorToken);
+          else connect(r, sid);
+        }
       }, delay);
     };
   }
@@ -545,6 +575,7 @@ export const useSessionStore = defineStore("session", () => {
     ws.value = null;
     connected.value = false;
     currentAudienceGuest = null;
+    currentMirrorToken = null;
   }
 
   function sendRaw(message: unknown): void {
@@ -629,7 +660,7 @@ export const useSessionStore = defineStore("session", () => {
 
   function markAnswered(questionId: string): void {
     sendRaw({ type: "question.answered", payload: { question_id: questionId } });
-    if (!snapshot.value) return;
+    if (!hasQuestions(snapshot.value)) return;
     const q = snapshot.value.questions.find((qq) => qq.id === questionId);
     if (q) q.answered_at = new Date().toISOString();
   }
@@ -666,6 +697,7 @@ export const useSessionStore = defineStore("session", () => {
     goToLiveSlide,
     loadHost,
     loadAudience,
+    loadMirror,
     setInterpretQuickOptions,
     connect,
     disconnect,

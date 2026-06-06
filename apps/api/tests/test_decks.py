@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+from datetime import datetime, timezone
+import uuid
+
 
 async def test_create_and_list_deck(client, auth_headers):
     create = await client.post("/api/v1/decks", json={"title": "My deck"}, headers=auth_headers)
@@ -9,6 +12,7 @@ async def test_create_and_list_deck(client, auth_headers):
     assert len(deck["slides"]) == 1
     assert deck["slides"][0]["position"] == 0
     assert deck["slides"][0]["presenter_notes"] is None
+    assert deck["mirror_access"] == {"mode": "owner", "allowed_emails": []}
 
     listed = await client.get("/api/v1/decks", headers=auth_headers)
     assert listed.status_code == 200
@@ -18,6 +22,175 @@ async def test_create_and_list_deck(client, auth_headers):
     assert items[0]["slide_count"] == 1
     assert items[0]["preview_markdown"] == "# Untitled\n"
     assert items[0]["preview_kicker"] is None
+
+
+async def test_update_mirror_access_modes_normalizes_and_clears_emails(client, auth_headers):
+    create = await client.post("/api/v1/decks", json={"title": "Mirror settings"}, headers=auth_headers)
+    assert create.status_code == 201, create.text
+    deck_id = create.json()["id"]
+
+    allowed = await client.patch(
+        f"/api/v1/decks/{deck_id}/mirror-access",
+        json={"mode": "allowed", "allowed_emails": [" Bob@Example.com ", "bob@example.com", "", "ALICE@EXAMPLE.COM"]},
+        headers=auth_headers,
+    )
+    assert allowed.status_code == 200, allowed.text
+    assert allowed.json() == {"mode": "allowed", "allowed_emails": ["bob@example.com", "alice@example.com"]}
+
+    got = await client.get(f"/api/v1/decks/{deck_id}", headers=auth_headers)
+    assert got.status_code == 200, got.text
+    assert got.json()["mirror_access"] == allowed.json()
+
+    link = await client.patch(
+        f"/api/v1/decks/{deck_id}/mirror-access",
+        json={"mode": "link", "allowed_emails": ["bob@example.com"]},
+        headers=auth_headers,
+    )
+    assert link.status_code == 200, link.text
+    assert link.json() == {"mode": "link", "allowed_emails": []}
+
+    owner = await client.patch(
+        f"/api/v1/decks/{deck_id}/mirror-access",
+        json={"mode": "owner", "allowed_emails": ["alice@example.com"]},
+        headers=auth_headers,
+    )
+    assert owner.status_code == 200, owner.text
+    assert owner.json() == {"mode": "owner", "allowed_emails": []}
+
+
+async def test_update_mirror_access_rotates_active_session_token(client, auth_headers):
+    create = await client.post("/api/v1/decks", json={"title": "Mirror rotate"}, headers=auth_headers)
+    assert create.status_code == 201, create.text
+    deck_id = create.json()["id"]
+    session = await client.post(
+        "/api/v1/sessions",
+        json={"deck_id": deck_id},
+        headers=auth_headers,
+    )
+    assert session.status_code == 201, session.text
+    session_id = session.json()["id"]
+
+    link_mode = await client.patch(
+        f"/api/v1/decks/{deck_id}/mirror-access",
+        json={"mode": "link", "allowed_emails": []},
+        headers=auth_headers,
+    )
+    assert link_mode.status_code == 200, link_mode.text
+    first_link = await client.get(f"/api/v1/sessions/{session_id}/mirror-link", headers=auth_headers)
+    assert first_link.status_code == 200, first_link.text
+    first_token = first_link.json()["token"]
+
+    owner_mode = await client.patch(
+        f"/api/v1/decks/{deck_id}/mirror-access",
+        json={"mode": "owner", "allowed_emails": []},
+        headers=auth_headers,
+    )
+    assert owner_mode.status_code == 200, owner_mode.text
+    relink = await client.patch(
+        f"/api/v1/decks/{deck_id}/mirror-access",
+        json={"mode": "link", "allowed_emails": []},
+        headers=auth_headers,
+    )
+    assert relink.status_code == 200, relink.text
+
+    second_link = await client.get(f"/api/v1/sessions/{session_id}/mirror-link", headers=auth_headers)
+    assert second_link.status_code == 200, second_link.text
+    second_token = second_link.json()["token"]
+    assert second_token and second_token != first_token
+
+    old = await client.get(f"/api/v1/sessions/{session_id}/mirror?token={first_token}")
+    assert old.status_code == 403
+    fresh = await client.get(f"/api/v1/sessions/{session_id}/mirror?token={second_token}")
+    assert fresh.status_code == 200
+
+
+async def test_update_mirror_access_rejects_invalid_email(client, auth_headers):
+    create = await client.post("/api/v1/decks", json={"title": "Mirror invalid"}, headers=auth_headers)
+    deck_id = create.json()["id"]
+
+    res = await client.patch(
+        f"/api/v1/decks/{deck_id}/mirror-access",
+        json={"mode": "allowed", "allowed_emails": ["not-an-email"]},
+        headers=auth_headers,
+    )
+
+    assert res.status_code == 422
+
+
+async def test_update_mirror_access_requires_owner(client, auth_headers, seeded_user, fake_supabase_auth):
+    from slaides.db import models
+    from slaides.db.base import get_session_factory
+
+    create = await client.post("/api/v1/decks", json={"title": "Owner only mirror"}, headers=auth_headers)
+    deck_id = create.json()["id"]
+
+    same_workspace_user_id = uuid.UUID("dddddddd-dddd-dddd-dddd-dddddddddddd")
+    fake_supabase_auth.add_user(
+        email="same-workspace@example.com",
+        password="hunter2",
+        user_id=str(same_workspace_user_id),
+    )
+    factory = get_session_factory()
+    async with factory() as db:
+        db.add(
+            models.AppUser(
+                workspace_id=seeded_user["workspace_id"],
+                supabase_user_id=same_workspace_user_id,
+                email="same-workspace@example.com",
+                role="instructor",
+                approval_status="approved",
+                approved_at=datetime.now(timezone.utc),
+            )
+        )
+        await db.commit()
+
+    same_workspace_token = (
+        await client.post(
+            "/api/v1/auth/signin",
+            json={"email": "same-workspace@example.com", "password": "hunter2"},
+        )
+    ).json()["access"]
+    same_workspace = await client.patch(
+        f"/api/v1/decks/{deck_id}/mirror-access",
+        json={"mode": "link", "allowed_emails": []},
+        headers={"Authorization": f"Bearer {same_workspace_token}"},
+    )
+    assert same_workspace.status_code == 404
+
+    other_workspace_user_id = uuid.UUID("eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee")
+    fake_supabase_auth.add_user(
+        email="other-workspace@example.com",
+        password="hunter2",
+        user_id=str(other_workspace_user_id),
+    )
+    async with factory() as db:
+        ws = models.Workspace(name="Other Mirror Workspace")
+        db.add(ws)
+        await db.flush()
+        db.add(
+            models.AppUser(
+                workspace_id=ws.id,
+                supabase_user_id=other_workspace_user_id,
+                email="other-workspace@example.com",
+                role="owner",
+                approval_status="approved",
+                approved_at=datetime.now(timezone.utc),
+            )
+        )
+        await db.commit()
+
+    other_workspace_token = (
+        await client.post(
+            "/api/v1/auth/signin",
+            json={"email": "other-workspace@example.com", "password": "hunter2"},
+        )
+    ).json()["access"]
+    other_workspace = await client.patch(
+        f"/api/v1/decks/{deck_id}/mirror-access",
+        json={"mode": "link", "allowed_emails": []},
+        headers={"Authorization": f"Bearer {other_workspace_token}"},
+    )
+    assert other_workspace.status_code == 404
 
 
 async def test_get_patch_delete_deck(client, auth_headers):
