@@ -181,4 +181,57 @@ describe("Presenter mirror link", () => {
     );
     expect(writeText).not.toHaveBeenCalled();
   });
+
+  it("compacts pagination dots for large decks", async () => {
+    const manySlides = structuredClone(snapshot);
+    manySlides.slides = Array.from({ length: 46 }, (_, index) => ({
+      id: `slide-${index + 1}`,
+      deck_id: "deck-1",
+      section_id: null,
+      position: index,
+      kicker: null,
+      markdown: `# Slide ${index + 1}`,
+      updated_at: "2026-06-06T00:00:00Z",
+      widgets: [],
+    }));
+    manySlides.current_slide_id = "slide-1";
+    vi.mocked(sessionsApi.get).mockResolvedValueOnce(manySlides);
+    const router = createRouter({
+      history: createMemoryHistory(),
+      routes: [
+        { path: "/present/:sessionId", name: "presenter", component: Presenter, props: true },
+        { path: "/signin", name: "signin", component: { template: "<div />" } },
+        { path: "/workspace", name: "workspace", component: { template: "<div />" } },
+      ],
+    });
+    await router.push("/present/sess-1");
+    await router.isReady();
+
+    const wrapper = mount(Presenter, {
+      props: { sessionId: "sess-1" },
+      global: {
+        plugins: [router],
+        stubs: {
+          AccountMenu: true,
+          AnswerModerationRail: true,
+          LiveInteractionSheet: true,
+          LivePollSlide: true,
+          LiveQuestionSlide: true,
+          LiveRandomAudienceSlide: true,
+          OpenInteractionFab: true,
+          PresenterRail: true,
+          SlideStage: true,
+          Wordmark: true,
+        },
+      },
+    });
+    await flushPromises();
+
+    const pagination = wrapper.get('[data-testid="presenter-pagination-window"]');
+    expect(pagination.findAll('button[aria-label^="Go to slide"]').length).toBeLessThanOrEqual(7);
+    expect(pagination.find('[data-testid="presenter-pagination-ellipsis"]').exists()).toBe(false);
+    expect(pagination.find('[data-testid="presenter-pagination-fade-left"]').exists()).toBe(false);
+    expect(pagination.find('[data-testid="presenter-pagination-fade-right"]').exists()).toBe(true);
+    expect(wrapper.text()).toContain("1 / 46");
+  });
 });

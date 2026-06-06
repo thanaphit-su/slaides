@@ -164,6 +164,49 @@ const activePresentationIndex = computed(() => {
   return presentationOrder.value.findIndex((s) => s.id === snap.current_slide_id);
 });
 
+const paginationItems = computed(() => {
+  const order = presentationOrder.value;
+  const total = order.length;
+  const active = activePresentationIndex.value;
+  if (total <= 24 || active < 0) {
+    return order.map((slide, index) => ({
+      type: "slide" as const,
+      key: slide.id,
+      slide,
+      index,
+    }));
+  }
+
+  const windowSize = 7;
+  const radius = Math.floor(windowSize / 2);
+  let start = Math.max(0, active - radius);
+  let end = Math.min(total - 1, start + windowSize - 1);
+  if (end - start + 1 < windowSize) {
+    start = Math.max(0, end - windowSize + 1);
+  }
+
+  const items: Array<{ type: "slide"; key: string; slide: (typeof order)[number]; index: number }> = [];
+  for (let index = start; index <= end; index += 1) {
+    items.push({
+      type: "slide",
+      key: order[index].id,
+      slide: order[index],
+      index,
+    });
+  }
+  return items;
+});
+
+const paginationHasHiddenBefore = computed(() => {
+  const first = paginationItems.value[0];
+  return !!first && first.index > 0;
+});
+
+const paginationHasHiddenAfter = computed(() => {
+  const last = paginationItems.value[paginationItems.value.length - 1];
+  return !!last && last.index < presentationOrder.value.length - 1;
+});
+
 const canGoPrev = computed(() => activePresentationIndex.value > 0);
 const canGoNext = computed(
   () => activePresentationIndex.value >= 0 && activePresentationIndex.value < presentationOrder.value.length - 1,
@@ -531,26 +574,70 @@ watch(
         <Icon name="chev_left" :size="16" /> Prev
       </button>
 
-      <div :style="{ display: 'flex', alignItems: 'center', gap: '14px' }">
-        <div :style="{ display: 'flex', gap: '6px', alignItems: 'center' }">
-          <button
-            v-for="(s, i) in presentationOrder"
-            :key="s.id"
-            type="button"
-            @click="selectPresentationSlide(s.id)"
-            :title="`Slide ${i + 1}`"
-            :aria-label="`Go to slide ${i + 1}`"
+      <div :style="{ display: 'flex', alignItems: 'center', gap: '14px', minWidth: 0 }">
+        <div
+          data-testid="presenter-pagination-window"
+          :style="{
+            position: 'relative',
+            maxWidth: 'min(760px, 52vw)',
+            overflow: 'hidden',
+          }"
+        >
+          <span
+            v-if="paginationHasHiddenBefore"
+            data-testid="presenter-pagination-fade-left"
+            aria-hidden="true"
             :style="{
-              width: '8px',
-              height: '8px',
-              borderRadius: '50%',
-              border: 'none',
-              padding: 0,
-              cursor: 'pointer',
-              background: i === activePresentationIndex ? 'var(--ink)' : 'var(--rule-strong)',
-              transition: 'background .15s ease',
+              position: 'absolute',
+              inset: '0 auto 0 0',
+              width: '18px',
+              zIndex: 1,
+              pointerEvents: 'none',
+              background: 'linear-gradient(90deg, var(--paper), transparent)',
             }"
           />
+          <span
+            v-if="paginationHasHiddenAfter"
+            data-testid="presenter-pagination-fade-right"
+            aria-hidden="true"
+            :style="{
+              position: 'absolute',
+              inset: '0 0 0 auto',
+              width: '18px',
+              zIndex: 1,
+              pointerEvents: 'none',
+              background: 'linear-gradient(270deg, var(--paper), transparent)',
+            }"
+          />
+          <div
+            :style="{
+              display: 'flex',
+              gap: '6px',
+              alignItems: 'center',
+              paddingLeft: paginationHasHiddenBefore ? '8px' : '0',
+              paddingRight: paginationHasHiddenAfter ? '8px' : '0',
+            }"
+          >
+          <template v-for="item in paginationItems" :key="item.key">
+            <button
+              type="button"
+              @click="selectPresentationSlide(item.slide.id)"
+              :title="`Slide ${item.index + 1}`"
+              :aria-label="`Go to slide ${item.index + 1}`"
+              :style="{
+                width: item.index === activePresentationIndex ? '9px' : '7px',
+                height: item.index === activePresentationIndex ? '9px' : '7px',
+                flex: '0 0 auto',
+                borderRadius: '50%',
+                border: 'none',
+                padding: 0,
+                cursor: 'pointer',
+                background: item.index === activePresentationIndex ? 'var(--ink)' : 'var(--rule-strong)',
+                transition: 'background .15s ease, width .15s ease, height .15s ease',
+              }"
+            />
+          </template>
+          </div>
         </div>
         <span class="t-mono" :style="{ color: 'var(--ink-soft)' }">
           {{ activePresentationIndex >= 0 ? activePresentationIndex + 1 : "—" }} / {{ presentationOrder.length }}
