@@ -58,6 +58,35 @@ async def test_workspace_endpoint(client, auth_headers):
     res = await client.get("/api/v1/workspace", headers=auth_headers)
     assert res.status_code == 200
     assert res.json()["name"] == "Test Workspace"
+    assert res.json()["widget_cdn_allowlist"] == []
+
+
+async def test_widget_cdn_allowlist_normalises_and_dedupes(client, auth_headers):
+    res = await client.patch(
+        "/api/v1/workspace",
+        headers=auth_headers,
+        json={
+            "widget_cdn_allowlist": [
+                "https://cdn.jsdelivr.net/npm/foo@1/dist/foo.js",  # path stripped to origin
+                "https://CDN.jsdelivr.net",  # duplicate after host lowercasing
+                "https://unpkg.com",
+            ]
+        },
+    )
+    assert res.status_code == 200
+    assert res.json()["widget_cdn_allowlist"] == [
+        "https://cdn.jsdelivr.net",
+        "https://unpkg.com",
+    ]
+
+
+async def test_widget_cdn_allowlist_rejects_non_http_origin(client, auth_headers):
+    res = await client.patch(
+        "/api/v1/workspace",
+        headers=auth_headers,
+        json={"widget_cdn_allowlist": ["ftp://evil.example.com"]},
+    )
+    assert res.status_code == 422
 
 
 async def test_approved_supabase_user_can_sign_in_and_access_workspace(client, seeded_user, fake_supabase_auth):

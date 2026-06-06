@@ -7,6 +7,8 @@ import { useWidgetsStore } from "@/stores/widgets";
 import { decksApi } from "@/api/decks";
 import { sessionsApi } from "@/api/sessions";
 import { widgetsApi } from "@/api/widgets";
+import { workspaceApi } from "@/api/workspace";
+import { setAllowedCdnHosts } from "@/widgets/widget-csp";
 import Wordmark from "@/components/Wordmark.vue";
 import Icon from "@/components/Icon.vue";
 import SidebarOpen from "@/components/SidebarOpen.vue";
@@ -78,6 +80,12 @@ function syncWidgetSidebarWidth() {
 onMounted(async () => {
   window.addEventListener("resize", syncWidgetSidebarWidth);
   window.addEventListener("keydown", onEditorKeydown);
+  // Load the workspace's widget CDN allowlist so previewed iframe widgets get
+  // the same CSP origins the live audience will. Non-blocking and best-effort.
+  void workspaceApi
+    .get()
+    .then((ws) => setAllowedCdnHosts(ws.widget_cdn_allowlist))
+    .catch(() => {});
   await editor.loadDeck(props.deckId);
   // Restore the active slide from `?slide=N` (1-based position) so a refresh
   // lands the user on the same slide they were editing. Falls through to the

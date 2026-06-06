@@ -64,6 +64,10 @@ class Workspace(Base):
     llm_capability_models: Mapped[dict] = mapped_column(JSON, default=dict)
     interpret_quick_options: Mapped[list] = mapped_column(JSON, default=list)
     log_llm_prompts_for_transcript: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    # Admin-configured allowlist of external origins (e.g. CDNs) that widget
+    # iframes may load scripts/styles/fonts from and connect() to. Empty by
+    # default — the widget CSP stays fully locked down until an admin opts in.
+    widget_cdn_allowlist: Mapped[list] = mapped_column(JSON, nullable=False, default=list, server_default="[]")
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
 
