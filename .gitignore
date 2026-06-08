@@ -68,6 +68,27 @@ docker/supabase/.env
 docker/supabase/.env.*
 !docker/supabase/.env.example
 docker/supabase/volumes/
+!docker/supabase/volumes/
+docker/supabase/volumes/db/data/
+docker/supabase/volumes/slaides-db/
+docker/supabase/volumes/storage/
+docker/supabase/volumes/slaides-storage/
+!docker/supabase/volumes/api/
+!docker/supabase/volumes/api/**
+!docker/supabase/volumes/db/
+!docker/supabase/volumes/db/*.sql
+!docker/supabase/volumes/db/init/
+!docker/supabase/volumes/db/init/**
+!docker/supabase/volumes/functions/
+!docker/supabase/volumes/functions/**
+!docker/supabase/volumes/logs/
+!docker/supabase/volumes/logs/**
+!docker/supabase/volumes/pooler/
+!docker/supabase/volumes/pooler/**
+!docker/supabase/volumes/proxy/
+!docker/supabase/volumes/proxy/**
+!docker/supabase/volumes/snippets/
+!docker/supabase/volumes/snippets/**
 docker/supabase/test.http
 docker/supabase/docker-compose.override.yml
 
