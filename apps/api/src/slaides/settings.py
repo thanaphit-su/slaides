@@ -16,6 +16,9 @@ class Settings(BaseSettings):
     )
 
     database_url: str = "postgresql+asyncpg://postgres:postgres@localhost:54322/postgres"
+    database_pool_size: int = 3
+    database_max_overflow: int = 1
+    database_pool_timeout: int = 10
     slaides_env: str = "development"
     jwt_secret: str = "dev-jwt-secret-change-me"
     guest_jwt_secret: str = "dev-guest-jwt-secret-change-me"

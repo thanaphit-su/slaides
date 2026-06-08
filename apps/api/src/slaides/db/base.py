@@ -25,7 +25,16 @@ def get_engine() -> AsyncEngine:
     global _engine, _session_factory
     if _engine is None:
         settings = get_settings()
-        _engine = create_async_engine(settings.database_url, pool_pre_ping=True)
+        engine_kwargs = {"pool_pre_ping": True}
+        if not settings.database_url.startswith("sqlite"):
+            engine_kwargs.update(
+                {
+                    "pool_size": settings.database_pool_size,
+                    "max_overflow": settings.database_max_overflow,
+                    "pool_timeout": settings.database_pool_timeout,
+                }
+            )
+        _engine = create_async_engine(settings.database_url, **engine_kwargs)
         _session_factory = async_sessionmaker(_engine, expire_on_commit=False)
     return _engine
 
