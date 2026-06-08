@@ -42,7 +42,7 @@ from .schemas import (
     SessionSlideOut,
     SessionSnapshot,
 )
-from ..workspace.preferences import normalise_interpret_quick_options
+from ..workspace.preferences import normalise_cdn_allowlist, normalise_interpret_quick_options
 
 # Display names the preview harness hands out to fake guests. Five covers the
 # audience_count cap; the extra names are harmless if the cap changes later.
@@ -122,6 +122,7 @@ async def _snapshot(
         questions=[QuestionOut.model_validate(q) for q in questions],
         audience_count=len(participants),
         interpret_quick_options=normalise_interpret_quick_options(workspace),
+        widget_cdn_allowlist=normalise_cdn_allowlist(workspace),
         placement_states=[
             PlacementStateOut(**placement_state_service.project_for_snapshot(p))
             for p in placement_states
@@ -201,6 +202,7 @@ async def _mirror_snapshot(session: AsyncSession, row: SessionRow) -> MirrorSess
         slides=slides,
         session_slides=full.session_slides,
         placement_states=full.placement_states,
+        widget_cdn_allowlist=full.widget_cdn_allowlist,
     )
 
 

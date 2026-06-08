@@ -109,6 +109,7 @@ class SessionSnapshot(BaseModel):
     questions: list[QuestionOut]
     audience_count: int
     interpret_quick_options: list[InterpretQuickOption] = Field(default_factory=list)
+    widget_cdn_allowlist: list[str] = Field(default_factory=list)
     placement_states: list[PlacementStateOut] = []
 
 
@@ -134,6 +135,7 @@ class MirrorSessionSnapshot(BaseModel):
     slides: list[MirrorSlideOut]
     session_slides: list[SessionSlideOut]
     placement_states: list[PlacementStateOut] = Field(default_factory=list)
+    widget_cdn_allowlist: list[str] = Field(default_factory=list)
 
 
 class MirrorLinkOut(BaseModel):

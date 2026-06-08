@@ -1024,14 +1024,49 @@ def _system_prompt(purpose: str) -> str:
     return "Summarise session transcript material into concise, useful notes."
 
 
+_FILE_LANGUAGE_BY_EXT = {
+    "md": "markdown",
+    "html": "html",
+    "js": "javascript",
+    "jsx": "jsx",
+    "ts": "typescript",
+    "tsx": "tsx",
+    "css": "css",
+    "json": "json",
+    "py": "python",
+    "yaml": "yaml",
+    "yml": "yaml",
+    "csv": "csv",
+    "xml": "xml",
+    "txt": "",
+}
+
+
+def _file_language(name: str | None, mime_type: str | None) -> str:
+    if name and "." in name:
+        ext = name.rsplit(".", 1)[-1].lower()
+        if ext in _FILE_LANGUAGE_BY_EXT:
+            return _FILE_LANGUAGE_BY_EXT[ext]
+    return ""
+
+
 def _messages(body: LlmCompleteRequest) -> list[dict]:
     context = body.context or {}
     content = body.prompt
     if context:
         content = f"{body.prompt}\n\nContext:\n{json.dumps(context, ensure_ascii=False)}"
     user_content: str | list[dict] = content
-    if body.images:
+    if body.images or body.files:
         user_content = [{"type": "text", "text": content}]
+        for file in body.files:
+            label = file.name or "file"
+            lang = _file_language(file.name, file.mime_type)
+            user_content.append(
+                {
+                    "type": "text",
+                    "text": f"Attached file `{label}`:\n```{lang}\n{file.content}\n```",
+                }
+            )
         for image in body.images:
             user_content.append({"type": "image_url", "image_url": {"url": image.data_url}})
     return [

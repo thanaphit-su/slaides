@@ -3,6 +3,7 @@ import { computed, reactive, ref, watch } from "vue";
 import { workspaceApi } from "@/api/workspace";
 import { llmApi } from "@/api/llm";
 import { useSessionStore } from "@/stores/session";
+import { setAllowedCdnHosts } from "@/widgets/widget-csp";
 import Icon from "@/components/Icon.vue";
 import { useThemeMode, type ThemeMode } from "@/theme/useThemeMode";
 import type {
@@ -31,7 +32,7 @@ const emit = defineEmits<{
   (e: "save-mirror-access", settings: MirrorAccessSettings): void;
 }>();
 
-const tab = ref<"session" | "llm" | "display" | "account">("llm");
+const tab = ref<"session" | "llm" | "integration" | "display" | "account">("llm");
 const loading = ref(false);
 const saving = ref(false);
 const testing = ref(false);
@@ -50,6 +51,76 @@ const defaultInterpretQuickOptions: InterpretQuickOption[] = [
   { label: "Simple definition", instruction: "show a simple definition" },
   { label: "Why it matters", instruction: "explain why this matters for this slide" },
 ];
+
+// Curated, well-known CDN origins offered as one-click toggles. An admin can
+// also add arbitrary origins in the free-text field. These origins are added
+// to the widget iframe CSP (script/style/font/connect-src).
+const CDN_PRESETS: Array<{ id: string; label: string; origins: string[] }> = [
+  { id: "jsdelivr", label: "jsDelivr", origins: ["https://cdn.jsdelivr.net"] },
+  { id: "unpkg", label: "unpkg", origins: ["https://unpkg.com"] },
+  { id: "cdnjs", label: "cdnjs", origins: ["https://cdnjs.cloudflare.com"] },
+  {
+    id: "google_fonts",
+    label: "Google Fonts",
+    origins: ["https://fonts.googleapis.com", "https://fonts.gstatic.com"],
+  },
+];
+
+const cdnPresetsSelected = reactive<Record<string, boolean>>(
+  Object.fromEntries(CDN_PRESETS.map((p) => [p.id, false])),
+);
+const cdnCustomText = ref("");
+
+/** Reduce a user-entered URL to a bare `scheme://host[:port]` origin, or null
+ *  if it isn't a valid http(s) origin. Mirrors the backend normaliser. */
+function normaliseCdnOrigin(value: string): string | null {
+  const raw = (value || "").trim();
+  if (!raw) return null;
+  try {
+    const url = new URL(raw);
+    if (url.protocol !== "http:" && url.protocol !== "https:") return null;
+    return `${url.protocol}//${url.host.toLowerCase()}`;
+  } catch {
+    return null;
+  }
+}
+
+/** Parse the free-text field into normalised origins (split on whitespace/commas). */
+function parseCustomCdnOrigins(): string[] {
+  return cdnCustomText.value
+    .split(/[\s,]+/)
+    .map((v) => normaliseCdnOrigin(v))
+    .filter((v): v is string => v !== null);
+}
+
+/** Build the full allowlist from selected presets + custom origins (deduped). */
+function buildCdnAllowlist(): string[] {
+  const out: string[] = [];
+  const seen = new Set<string>();
+  const push = (origin: string) => {
+    if (!seen.has(origin)) {
+      seen.add(origin);
+      out.push(origin);
+    }
+  };
+  for (const preset of CDN_PRESETS) {
+    if (cdnPresetsSelected[preset.id]) preset.origins.forEach(push);
+  }
+  parseCustomCdnOrigins().forEach(push);
+  return out;
+}
+
+/** Split a saved allowlist back into preset toggles + a custom remainder. */
+function applyCdnAllowlist(list: string[]): void {
+  const origins = new Set((list || []).map((o) => normaliseCdnOrigin(o)).filter((o): o is string => !!o));
+  const claimed = new Set<string>();
+  for (const preset of CDN_PRESETS) {
+    const present = preset.origins.every((o) => origins.has(o));
+    cdnPresetsSelected[preset.id] = present;
+    if (present) preset.origins.forEach((o) => claimed.add(o));
+  }
+  cdnCustomText.value = [...origins].filter((o) => !claimed.has(o)).join("\n");
+}
 
 const capabilities: Array<{ key: LlmCapability; title: string; description: string }> = [
   {
@@ -162,6 +233,10 @@ function applyWorkspace(ws: Workspace) {
     .map((option) => ({ ...option }));
   form.keyConfigured = ws.llm_key_configured;
   form.logLlmPromptsForTranscript = ws.log_llm_prompts_for_transcript ?? false;
+  applyCdnAllowlist(ws.widget_cdn_allowlist || []);
+  // Push to the live CSP holder so previewed widgets pick up the current
+  // allowlist immediately (covers both initial load and post-save).
+  setAllowedCdnHosts(ws.widget_cdn_allowlist || []);
   form.apiKey = "";
   clearKey.value = false;
   advancedModelId.value = null;
@@ -210,6 +285,7 @@ async function saveWorkspace(): Promise<Workspace | null> {
       llm_caps: Object.fromEntries(capabilities.map((cap) => [cap.key, capabilityModels[cap.key] !== null])),
       interpret_quick_options: cleanInterpretQuickOptions(form.interpretQuickOptions),
       log_llm_prompts_for_transcript: form.logLlmPromptsForTranscript,
+      widget_cdn_allowlist: buildCdnAllowlist(),
     };
     if (form.apiKey.trim() || clearKey.value) patch.llm_api_key = form.apiKey.trim();
     const saved = await workspaceApi.patch(patch);
@@ -381,6 +457,7 @@ watch(tab, () => {
           v-for="[key, label] in [
             ['session', 'Session'],
             ['llm', 'LLM'],
+            ['integration', 'Integration'],
             ['display', 'Display'],
             ['account', 'Account'],
           ] as const"
@@ -681,6 +758,47 @@ watch(tab, () => {
             </div>
           </section>
 
+          <section v-if="tab === 'integration'" class="settings-stack">
+            <div class="settings-block">
+              <h3>Widget CDN allowlist</h3>
+              <p class="settings-hint">
+                Widgets run in a locked-down sandboxed iframe with no network access by default.
+                Allow trusted origins below to let widgets load scripts, styles, and fonts from
+                them (and <code>fetch()</code> them).
+                <strong>Security note:</strong> only add origins you trust — an allowed origin can
+                run code inside the widget sandbox and is a potential exfiltration channel. Prefer
+                version-pinned CDN URLs.
+              </p>
+              <div class="cdn-presets">
+                <label v-for="preset in CDN_PRESETS" :key="preset.id" class="cdn-preset-row">
+                  <input type="checkbox" v-model="cdnPresetsSelected[preset.id]" />
+                  <span>
+                    <strong>{{ preset.label }}</strong>
+                    <small>{{ preset.origins.join(", ") }}</small>
+                  </span>
+                </label>
+              </div>
+              <label class="field-label field-gap">Additional origins (one per line)</label>
+              <textarea
+                v-model="cdnCustomText"
+                class="cdn-custom-input"
+                rows="3"
+                placeholder="https://cdn.example.com&#10;https://esm.sh"
+                spellcheck="false"
+              />
+            </div>
+
+            <div class="settings-actions">
+              <button class="btn" :disabled="saving" @click="save">
+                <Icon name="check" :size="14" />
+                {{ saving ? "Saving..." : "Save" }}
+              </button>
+            </div>
+
+            <p v-if="status" class="status-text">{{ status }}</p>
+            <p v-if="error" class="error-text">{{ error }}</p>
+          </section>
+
           <section v-if="tab === 'display'" class="settings-stack">
             <div class="settings-block">
               <h3>Display</h3>
@@ -970,6 +1088,57 @@ watch(tab, () => {
   color: var(--ink-soft);
   font-size: 12px;
   line-height: 1.35;
+}
+
+.cdn-presets {
+  display: flex;
+  flex-direction: column;
+  margin-top: 10px;
+}
+
+.cdn-preset-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 0;
+  border-top: 1px solid var(--rule-soft);
+  cursor: pointer;
+}
+
+.cdn-preset-row:first-child {
+  border-top: none;
+}
+
+.cdn-preset-row input {
+  flex: 0 0 auto;
+}
+
+.cdn-preset-row span {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.cdn-preset-row strong {
+  font-family: var(--sans);
+  font-size: 13px;
+  color: var(--ink);
+}
+
+.cdn-preset-row small {
+  font-size: 12px;
+  color: var(--ink-soft);
+}
+
+.cdn-custom-input {
+  width: 100%;
+  margin-top: 6px;
+  border: 1px solid var(--rule);
+  border-radius: var(--r-sm);
+  padding: 8px 10px;
+  font-family: var(--mono, monospace);
+  font-size: 12px;
+  resize: vertical;
 }
 
 .cap-row {

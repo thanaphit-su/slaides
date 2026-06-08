@@ -40,6 +40,7 @@ class WorkspaceOut(BaseModel):
     llm_key_configured: bool = False
     interpret_quick_options: list[InterpretQuickOption] = Field(default_factory=list)
     log_llm_prompts_for_transcript: bool = False
+    widget_cdn_allowlist: list[str] = Field(default_factory=list)
 
 
 class WorkspacePatch(BaseModel):
@@ -51,3 +52,4 @@ class WorkspacePatch(BaseModel):
     llm_capability_models: dict[str, str | None] | None = None
     interpret_quick_options: list[InterpretQuickOption] | None = Field(default=None, max_length=3)
     log_llm_prompts_for_transcript: bool | None = None
+    widget_cdn_allowlist: list[str] | None = Field(default=None, max_length=20)

@@ -3,6 +3,7 @@ import { computed, ref } from "vue";
 import { attemptRefresh } from "@/api/client";
 import { sessionsApi } from "@/api/sessions";
 import { useAuthStore } from "@/stores/auth";
+import { setAllowedCdnHosts } from "@/widgets/widget-csp";
 import type {
   GuestJoinResponse,
   InterpretQuickOption,
@@ -194,6 +195,10 @@ export const useSessionStore = defineStore("session", () => {
 
   function seedPlacementStates(): void {
     hydratePlacementStates(snapshot.value?.placement_states || []);
+    // Apply the workspace's widget CDN allowlist for this session so iframe
+    // widgets get the same CSP origins the instructor configured. Called from
+    // every snapshot load (host / audience / mirror).
+    setAllowedCdnHosts(snapshot.value?.widget_cdn_allowlist);
   }
 
   function setInterpretQuickOptions(options: InterpretQuickOption[]): void {

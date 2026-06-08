@@ -181,6 +181,7 @@ export interface Workspace {
   llm_key_configured: boolean;
   interpret_quick_options: InterpretQuickOption[];
   log_llm_prompts_for_transcript: boolean;
+  widget_cdn_allowlist: string[];
 }
 
 export interface WorkspacePatch {
@@ -192,6 +193,7 @@ export interface WorkspacePatch {
   llm_capability_models?: Partial<Record<LlmCapability, string | null>>;
   interpret_quick_options?: InterpretQuickOption[];
   log_llm_prompts_for_transcript?: boolean;
+  widget_cdn_allowlist?: string[];
 }
 
 export type LlmPurpose = "inline_write" | "interpret" | "widget_generate" | "summarise";
@@ -329,6 +331,8 @@ export interface SessionSnapshot {
   questions: SessionQuestion[];
   audience_count: number;
   interpret_quick_options?: InterpretQuickOption[];
+  /** Admin-configured external origins widget iframes may load from. */
+  widget_cdn_allowlist?: string[];
   /** Widgets v2 Step 4 — current state for every Loud iframe widget placed
    * on this session's deck. Empty until any audience contributes. */
   placement_states?: PlacementState[];
@@ -347,6 +351,7 @@ export interface MirrorSessionSnapshot {
   slides: MirrorSlide[];
   session_slides: SessionSlide[];
   placement_states: PlacementState[];
+  widget_cdn_allowlist?: string[];
 }
 
 export interface MirrorLink {

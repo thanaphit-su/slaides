@@ -179,6 +179,22 @@ interface AttachedImage {
 }
 const attachedImages = ref<AttachedImage[]>([]);
 
+interface AttachedFile {
+  id: string;
+  name: string;
+  mime_type: string;
+  content: string;
+}
+const attachedFiles = ref<AttachedFile[]>([]);
+
+// Text/code files accepted in the chat composer. Their content is injected into the
+// prompt as text, so any model can read them (no vision capability required).
+const TEXT_FILE_EXTENSIONS = [
+  "txt", "md", "html", "js", "css", "json", "ts", "tsx", "jsx", "py", "yaml", "yml", "csv", "xml",
+];
+const MAX_TEXT_FILE_BYTES = 200_000;
+const MAX_ATTACHMENTS = 6;
+
 interface ChatMessage {
   id: string;
   role: "user" | "assistant";
@@ -189,6 +205,7 @@ interface ChatMessage {
   appliedFromMessageId?: string;
   raw?: string;
   images?: AttachedImage[];
+  files?: AttachedFile[];
   question?: WidgetWorkflowQuestion;
   plan?: string[];
   reflection?: string;
@@ -1013,23 +1030,81 @@ function readImageFile(file: File): Promise<AttachedImage> {
   });
 }
 
-async function onAttachImages(e: Event) {
+function fileExtension(file: File): string {
+  const name = file.name || "";
+  return name.includes(".") ? name.split(".").pop()!.toLowerCase() : "";
+}
+
+function isTextFile(file: File): boolean {
+  if (TEXT_FILE_EXTENSIONS.includes(fileExtension(file))) return true;
+  return file.type.startsWith("text/");
+}
+
+function readTextFile(file: File): Promise<AttachedFile> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onerror = () => reject(new Error(`Could not read ${file.name}`));
+    reader.onload = () => {
+      resolve({
+        id: messageId("file"),
+        name: file.name,
+        mime_type: file.type || "text/plain",
+        content: String(reader.result || ""),
+      });
+    };
+    reader.readAsText(file);
+  });
+}
+
+async function onAttachFiles(e: Event) {
   const input = e.target as HTMLInputElement;
-  const files = Array.from(input.files || []).filter((file) => file.type.startsWith("image/"));
+  const picked = Array.from(input.files || []);
   input.value = "";
-  if (!files.length) return;
+  if (!picked.length) return;
   error.value = null;
+
+  const images: File[] = [];
+  const textFiles: File[] = [];
+  const rejected: string[] = [];
+  for (const file of picked) {
+    if (file.type.startsWith("image/")) {
+      if (widgetModelSupportsImages.value) images.push(file);
+      else rejected.push(`${file.name} (current model does not accept images)`);
+    } else if (isTextFile(file)) {
+      if (file.size > MAX_TEXT_FILE_BYTES) rejected.push(`${file.name} (over 200 KB)`);
+      else textFiles.push(file);
+    } else {
+      rejected.push(`${file.name} (unsupported type)`);
+    }
+  }
+
   try {
-    const remaining = Math.max(0, 6 - attachedImages.value.length);
-    const next = await Promise.all(files.slice(0, remaining).map(readImageFile));
-    attachedImages.value.push(...next);
+    if (images.length) {
+      const remaining = Math.max(0, MAX_ATTACHMENTS - attachedImages.value.length);
+      const next = await Promise.all(images.slice(0, remaining).map(readImageFile));
+      attachedImages.value.push(...next);
+    }
+    if (textFiles.length) {
+      const remaining = Math.max(0, MAX_ATTACHMENTS - attachedFiles.value.length);
+      const next = await Promise.all(textFiles.slice(0, remaining).map(readTextFile));
+      attachedFiles.value.push(...next);
+    }
   } catch (err) {
-    error.value = err instanceof Error ? err.message : "Could not attach image.";
+    error.value = err instanceof Error ? err.message : "Could not attach file.";
+    return;
+  }
+
+  if (rejected.length) {
+    error.value = `Skipped: ${rejected.join(", ")}`;
   }
 }
 
 function removeAttachedImage(id: string) {
   attachedImages.value = attachedImages.value.filter((image) => image.id !== id);
+}
+
+function removeAttachedFile(id: string) {
+  attachedFiles.value = attachedFiles.value.filter((file) => file.id !== id);
 }
 
 function tabLabel(t: WidgetPanelTab): string {
@@ -1183,6 +1258,7 @@ async function sendMessage(overrideText?: string) {
     ? `re: <${selection.selector}${selection.text ? ` "${selection.text}"` : ""}>\n\n${baseText}`
     : baseText;
   const imagesForMessage = widgetModelSupportsImages.value ? [...attachedImages.value] : [];
+  const filesForMessage = [...attachedFiles.value];
   const currentWidget = targetWidget.value;
   if (adjusting.value && !currentWidget) {
     error.value = "Widget is still loading. Try again in a moment.";
@@ -1192,6 +1268,7 @@ async function sendMessage(overrideText?: string) {
   pendingWorkflowQuestion.value = null;
   if (selection) emit("clear-selected-target");
   attachedImages.value = [];
+  attachedFiles.value = [];
   resizeComposer();
   if (!adjusting.value) {
     pushRecentPrompt(text);
@@ -1201,7 +1278,7 @@ async function sendMessage(overrideText?: string) {
   error.value = null;
   const controller = new AbortController();
   currentAbort.value = controller;
-  messages.value.push({ id: messageId("user"), role: "user", text, images: imagesForMessage });
+  messages.value.push({ id: messageId("user"), role: "user", text, images: imagesForMessage, files: filesForMessage });
   const assistantId = messageId("assistant");
   const clarifyFirst = workflowMode.value === "clarify_first";
   const assistantMessage: ChatMessage = {
@@ -1253,6 +1330,11 @@ async function sendMessage(overrideText?: string) {
       name: image.name,
       mime_type: image.mime_type,
     }));
+    const requestFiles = filesForMessage.map((file) => ({
+      content: file.content,
+      name: file.name,
+      mime_type: file.mime_type,
+    }));
     let workflow: WidgetWorkflow | null = null;
     let lastError: unknown = null;
     let previousOutput = "";
@@ -1275,6 +1357,7 @@ async function sendMessage(overrideText?: string) {
             prompt,
             context,
             images: requestImages,
+            files: requestFiles,
           },
           {
             signal: controller.signal,
@@ -1503,6 +1586,7 @@ function clearConversation() {
   pendingWorkflowQuestion.value = null;
   customClarificationAnswer.value = "";
   attachedImages.value = [];
+  attachedFiles.value = [];
   error.value = null;
   nextTick(resizeComposer);
 }
@@ -1850,6 +1934,13 @@ async function doDelete(force: boolean) {
             <img v-for="image in message.images" :key="image.id" :src="image.data_url" :alt="image.name" />
           </div>
 
+          <div v-if="message.files?.length" class="chat-file-strip">
+            <span v-for="file in message.files" :key="file.id" class="chat-file-chip">
+              <Icon name="list" :size="12" />
+              <span class="chat-file-name">{{ file.name }}</span>
+            </span>
+          </div>
+
           <div v-if="message.plan?.length || message.reflection" class="widget-workflow-meta">
             <ol v-if="message.plan?.length" class="widget-workflow-plan">
               <li v-for="(step, idx) in message.plan" :key="idx">{{ step }}</li>
@@ -1995,11 +2086,25 @@ async function doDelete(force: boolean) {
             <Icon name="x" :size="11" />
           </button>
         </div>
-        <input ref="imageInput" type="file" accept="image/*" multiple hidden @change="onAttachImages" />
-        <div v-if="attachedImages.length" class="composer-attachments">
+        <input
+          ref="imageInput"
+          type="file"
+          accept="image/*,.txt,.md,.html,.js,.css,.json,.ts,.tsx,.jsx,.py,.yaml,.yml,.csv,.xml,text/*"
+          multiple
+          hidden
+          @change="onAttachFiles"
+        />
+        <div v-if="attachedImages.length || attachedFiles.length" class="composer-attachments">
           <span v-for="image in attachedImages" :key="image.id" class="composer-image-chip">
             <img :src="image.data_url" :alt="image.name" />
             <button type="button" :title="`Remove ${image.name}`" @click="removeAttachedImage(image.id)">
+              <Icon name="x" :size="11" />
+            </button>
+          </span>
+          <span v-for="file in attachedFiles" :key="file.id" class="composer-file-chip">
+            <Icon name="list" :size="12" />
+            <span class="composer-file-name">{{ file.name }}</span>
+            <button type="button" :title="`Remove ${file.name}`" @click="removeAttachedFile(file.id)">
               <Icon name="x" :size="11" />
             </button>
           </span>
@@ -2021,8 +2126,8 @@ async function doDelete(force: boolean) {
             <button
               class="widget-tool-btn"
               type="button"
-              :title="widgetModelSupportsImages ? 'Attach image' : 'Current model does not accept images'"
-              :disabled="!widgetModelSupportsImages || chatDisabled || generating || attachedImages.length >= 6"
+              :title="widgetModelSupportsImages ? 'Attach image or text/code file' : 'Attach text or code file'"
+              :disabled="chatDisabled || generating || (attachedImages.length >= MAX_ATTACHMENTS && attachedFiles.length >= MAX_ATTACHMENTS)"
               @click="imageInput?.click()"
             >
               <Icon name="upload" :size="14" />
@@ -3308,6 +3413,70 @@ async function doDelete(force: boolean) {
   align-items: center;
   justify-content: center;
   padding: 0;
+}
+
+.composer-file-chip {
+  position: relative;
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  max-width: 160px;
+  height: 42px;
+  padding: 0 10px;
+  border: 1px solid var(--rule);
+  border-radius: var(--r-sm);
+  background: var(--paper);
+  color: var(--ink);
+}
+
+.composer-file-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 12px;
+}
+
+.composer-file-chip button {
+  position: absolute;
+  top: -5px;
+  right: -5px;
+  width: 18px;
+  height: 18px;
+  border: 1px solid var(--rule);
+  border-radius: 50%;
+  background: var(--paper);
+  color: var(--ink);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+}
+
+.chat-file-strip {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 6px;
+}
+
+.chat-file-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  max-width: 200px;
+  padding: 3px 8px;
+  border: 1px solid var(--rule);
+  border-radius: var(--r-sm);
+  background: var(--paper);
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.chat-file-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .chat-error {

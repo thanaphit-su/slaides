@@ -32,6 +32,7 @@ function workspace(overrides: Partial<Workspace> = {}): Workspace {
       { label: "Why it matters", instruction: "explain why this matters for this slide" },
     ],
     log_llm_prompts_for_transcript: false,
+    widget_cdn_allowlist: [],
     ...overrides,
   };
 }

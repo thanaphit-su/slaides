@@ -9,7 +9,12 @@ from ..auth.deps import current_user
 from ..db.deps import db_session
 from ..db.models import AppUser, Workspace
 from ..llm.crypto import encrypt_workspace_secret
-from .preferences import normalise_interpret_quick_options
+from .preferences import (
+    clean_cdn_allowlist,
+    normalise_cdn_allowlist,
+    normalise_cdn_origin,
+    normalise_interpret_quick_options,
+)
 from .schemas import LlmModelConfig, WorkspaceOut, WorkspacePatch
 
 router = APIRouter(prefix="/workspace", tags=["workspace"])
@@ -86,6 +91,7 @@ def _workspace_out(ws: Workspace) -> WorkspaceOut:
         llm_key_configured=bool(ws.llm_key_enc),
         interpret_quick_options=normalise_interpret_quick_options(ws),
         log_llm_prompts_for_transcript=ws.log_llm_prompts_for_transcript,
+        widget_cdn_allowlist=normalise_cdn_allowlist(ws),
     )
 
 
@@ -189,6 +195,20 @@ async def patch_workspace(
 
     if body.log_llm_prompts_for_transcript is not None:
         ws.log_llm_prompts_for_transcript = body.log_llm_prompts_for_transcript
+
+    if body.widget_cdn_allowlist is not None:
+        invalid = [
+            value
+            for value in body.widget_cdn_allowlist
+            if isinstance(value, str) and value.strip() and normalise_cdn_origin(value) is None
+        ]
+        if invalid:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail=f"invalid CDN origin(s): {', '.join(invalid)}",
+            )
+        ws.widget_cdn_allowlist = clean_cdn_allowlist(body.widget_cdn_allowlist)
+        flag_modified(ws, "widget_cdn_allowlist")
 
     await session.flush()
     await session.refresh(ws)

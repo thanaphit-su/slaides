@@ -4,6 +4,7 @@ import { llmApi } from "@/api/llm";
 import { useSessionStore } from "@/stores/session";
 import { WIDGET_BRIDGE_SOURCE } from "./bridge";
 import { buildThemeStyleBlock, readHostTokens } from "./theme-tokens";
+import { buildWidgetCsp } from "./widget-csp";
 import type { Widget } from "@/api/types";
 
 const props = withDefaults(
@@ -199,12 +200,17 @@ function buildSrcdoc(w: Widget, boot: Record<string, unknown>, fill: boolean): s
   // end the surrounding script setup block.
   const close = "</scr" + "ipt>";
   const open = "<scr" + "ipt>";
-  // CSP locks the widget down to its own srcdoc: no network (`connect-src
-  // 'none'`), no external scripts/styles/fonts, no frame embedding, no form
-  // submissions, no relative `base` retargeting. Inline scripts/styles stay
-  // permitted because seed and user widgets author them inline; we accept the
-  // residual XSS risk inside the sandbox-null origin in exchange for the
-  // network lockdown.
+  // CSP locks the widget down to its own srcdoc: by default no network
+  // (`connect-src 'none'`), no external scripts/styles/fonts, no frame
+  // embedding, no form submissions, no relative `base` retargeting. Inline
+  // scripts/styles stay permitted because seed and user widgets author them
+  // inline; we accept the residual XSS risk inside the sandbox-null origin in
+  // exchange for the network lockdown.
+  //
+  // An admin can widen `script-src`/`style-src`/`font-src`/`connect-src` to a
+  // workspace-configured allowlist of trusted origins (e.g. a CDN) — see
+  // widget-csp.ts. The list is empty by default, so the policy below is
+  // identical to the previous hardcoded lockdown until an admin opts in.
   //
   // img-src admits `https:` (in addition to `data:`) so widgets like the
   // Carousel can load images from arbitrary HTTPS URLs the instructor
@@ -216,16 +222,7 @@ function buildSrcdoc(w: Widget, boot: Record<string, unknown>, fill: boolean): s
   // is props the instructor chose to pass + audience contributions the
   // audience chose to send, and (c) widget authoring is already trusted
   // workflow (LLM-generated drafts are reviewed before apply).
-  const csp =
-    "default-src 'none'; " +
-    "style-src 'unsafe-inline'; " +
-    "script-src 'unsafe-inline'; " +
-    "img-src data: https:; " +
-    "font-src data:; " +
-    "connect-src 'none'; " +
-    "base-uri 'none'; " +
-    "form-action 'none'; " +
-    "frame-ancestors 'self';";
+  const csp = buildWidgetCsp();
   // Bake host theme tokens into the iframe's :root so widgets can reference
   // `var(--background)`, `var(--primary)`, etc. instead of hard-coding hex.
   const themeStyle = buildThemeStyleBlock(hostTokens.value, { fill });
