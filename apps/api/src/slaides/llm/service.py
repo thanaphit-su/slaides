@@ -16,6 +16,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..db.models import AppUser, LlmCall, LlmInterpretCache, Workspace
+from ..redis_client import create_redis_client
 from ..settings import get_settings
 from .crypto import decrypt_workspace_secret
 from .schemas import LlmCompleteRequest
@@ -401,7 +402,7 @@ def set_redis(client: aioredis.Redis | None) -> None:
 async def _get_redis() -> aioredis.Redis:
     global _redis
     if _redis is None:
-        _redis = aioredis.from_url(get_settings().redis_url, decode_responses=True)
+        _redis = create_redis_client()
     return _redis
 
 

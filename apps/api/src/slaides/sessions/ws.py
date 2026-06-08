@@ -18,7 +18,7 @@ from ..auth.supabase import get_supabase_auth
 from ..db.base import get_session_factory
 from ..db.models import AppUser, Deck, InteractionLog, Participant, SessionSlide
 from ..db.models import Session as SessionRow
-from ..settings import get_settings
+from ..redis_client import create_redis_client
 from . import service as session_service
 from .schemas import SessionSlideOut
 
@@ -78,8 +78,7 @@ class Hub:
 
     async def _ensure_redis(self) -> aioredis.Redis:
         if self._redis is None:
-            url = get_settings().redis_url
-            self._redis = aioredis.from_url(url, decode_responses=True)
+            self._redis = create_redis_client()
         return self._redis
 
     async def aclose(self) -> None:
