@@ -186,9 +186,16 @@ def _verify_local_jwt(access_token: str, secret: str) -> tuple[str, str, int]:
 
     Returns (user_id, email, ttl_seconds). On expired/invalid signature
     raises HTTPException(401). Returns ("", "", 0) when the token decoded
-    cleanly but lacks the email claim — caller falls back to the legacy
-    remote path for that edge case.
+    cleanly but lacks the email claim, or when the token uses a signing
+    algorithm this local verifier does not support. The caller then falls
+    back to the remote Supabase /user path for those edge cases.
     """
+    try:
+        header = jwt.get_unverified_header(access_token)
+    except jwt.InvalidTokenError as exc:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="invalid token") from exc
+    if header.get("alg") != "HS256":
+        return "", "", 0
     try:
         payload = jwt.decode(
             access_token,

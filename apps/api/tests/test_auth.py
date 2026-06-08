@@ -1,12 +1,15 @@
 from __future__ import annotations
 
 import uuid
+import base64
+import json
 
 from sqlalchemy.exc import IntegrityError
 
 from slaides.db import models
 from slaides.db.base import get_session_factory
 from slaides.auth.router import is_participant_unique_conflict
+from slaides.auth.supabase import _verify_local_jwt
 from slaides.sessions.ws import _supabase_host_from_token
 
 
@@ -200,6 +203,22 @@ async def test_cache_expiry_forces_fresh_lookup(client, auth_headers, fake_supab
     res = await client.get("/api/v1/auth/me", headers=auth_headers)
     assert res.status_code == 200
     assert fake_supabase_auth.remote_get_user_calls - start == 2
+
+
+def test_es256_supabase_token_falls_back_to_remote_verification():
+    def segment(data: dict) -> str:
+        raw = json.dumps(data, separators=(",", ":")).encode()
+        return base64.urlsafe_b64encode(raw).decode().rstrip("=")
+
+    token = ".".join(
+        [
+            segment({"alg": "ES256", "typ": "JWT"}),
+            segment({"aud": "authenticated", "sub": str(uuid.uuid4()), "exp": 4_102_444_800}),
+            base64.urlsafe_b64encode(b"signature").decode().rstrip("="),
+        ]
+    )
+
+    assert _verify_local_jwt(token, "legacy-secret") == ("", "", 0)
 
 
 def test_participant_unique_conflict_is_detected():
