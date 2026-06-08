@@ -1,0 +1,10 @@
+services:
+  api:
+    networks:
+      - default
+      - supabase
+
+networks:
+  supabase:
+    external: true
+    name: supabase_default
