@@ -1,6 +1,22 @@
 name: slaides-prod
 
 services:
+  caddy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    environment:
+      SLAIDES_DOMAIN: ${SLAIDES_DOMAIN:?SLAIDES_DOMAIN is required}
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./docker/caddy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+      - caddy-config:/config
+    depends_on:
+      web:
+        condition: service_healthy
+
   redis:
     image: redis:7-alpine
     restart: unless-stopped
@@ -48,8 +64,6 @@ services:
       args:
         VITE_API_URL: /api/v1
     restart: unless-stopped
-    ports:
-      - "${SLAIDES_HTTP_PORT:-8080}:8080"
     depends_on:
       api:
         condition: service_healthy
@@ -60,4 +74,6 @@ services:
       retries: 10
 
 volumes:
+  caddy-data:
+  caddy-config:
   redis-data:

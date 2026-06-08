@@ -1,0 +1,8 @@
+{$SLAIDES_DOMAIN} {
+    encode gzip zstd
+    reverse_proxy web:8080
+}
+
+www.{$SLAIDES_DOMAIN} {
+    redir https://{$SLAIDES_DOMAIN}{uri} permanent
+}

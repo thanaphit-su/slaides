@@ -40,13 +40,17 @@ Useful local URLs:
 
 ## Production container rehearsal
 
-`docker-compose.prod.yml` builds the FastAPI API and the Vue static web image, runs Redis with persistence, and expects managed Postgres/Supabase values through environment variables.
+`docker-compose.prod.yml` builds the FastAPI API and the Vue static web image, runs Redis with persistence, and puts Caddy in front on ports 80/443 for HTTPS. It expects managed Postgres/Supabase values and a production domain through environment variables.
 
-1. Set production environment variables: `DATABASE_URL`, `CORS_ORIGINS`, `JWT_SECRET`, `GUEST_JWT_SECRET`, `SUPABASE_URL`, `SUPABASE_ANON_KEY`, `SUPABASE_SERVICE_ROLE_KEY`, `SUPABASE_JWT_SECRET`, and `LLM_ENCRYPTION_SECRET`.
-2. Run `make prod-build`.
-3. Run `make prod-migrate`.
-4. Run `make prod-up`.
-5. Check `GET /readyz` through the deployed web/API route.
+1. Point your domain's `A` record to the VM public IP.
+2. Set production environment variables: `SLAIDES_DOMAIN`, `DATABASE_URL`, `CORS_ORIGINS`, `JWT_SECRET`, `GUEST_JWT_SECRET`, `SUPABASE_URL`, `SUPABASE_ANON_KEY`, `SUPABASE_SERVICE_ROLE_KEY`, `SUPABASE_JWT_SECRET`, and `LLM_ENCRYPTION_SECRET`.
+   - `SLAIDES_DOMAIN=yourdomain.com`
+   - `CORS_ORIGINS=https://yourdomain.com`
+   - The frontend is built with `VITE_API_URL=/api/v1`, so API and WebSocket traffic stay on the same domain through Caddy/Nginx.
+3. Run `make prod-build`.
+4. Run `make prod-migrate`.
+5. Run `make prod-up`.
+6. Check `GET /readyz` through the deployed web/API route.
 
 Before a first large live session, create a real live session and run:
 
