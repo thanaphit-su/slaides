@@ -128,6 +128,7 @@ async def _create_revision(
     behavior: dict | None,
     ai_spec: dict,
     created_reason: str,
+    sync_placements: bool = False,
 ) -> WidgetRevision:
     rev = WidgetRevision(
         widget_id=widget.id,
@@ -151,6 +152,12 @@ async def _create_revision(
     widget.css = rev.css
     widget.props_schema = rev.props_schema
     widget.behavior = rev.behavior
+    if sync_placements:
+        await session.execute(
+            update(SlideWidget)
+            .where(SlideWidget.widget_id == widget.id)
+            .values(revision_id=rev.id)
+        )
     await session.flush()
     return rev
 
@@ -493,7 +500,10 @@ async def patch_widget(
                 value = getattr(body, key)
                 if value is not None:
                     base[key] = value
-        await _create_revision(session, w, created_reason="patch", **base)
+        sync_placements = bool(
+            (revision_fields - {"behavior"}).intersection(body.model_fields_set)
+        )
+        await _create_revision(session, w, created_reason="patch", sync_placements=sync_placements, **base)
     await session.flush()
     await session.refresh(w)
     return await _full_with_revision(session, w)
@@ -545,6 +555,7 @@ async def rollback_widget_revision(
         behavior=source.behavior or {"kind": "quiet"},
         ai_spec=source.ai_spec or {},
         created_reason="rollback",
+        sync_placements=True,
     )
     await session.flush()
     await session.refresh(widget)

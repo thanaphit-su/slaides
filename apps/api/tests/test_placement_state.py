@@ -90,7 +90,7 @@ async def _create_widget(client, headers, deck_id: str, **overrides):
     return res.json()
 
 
-async def test_live_placement_uses_original_revision_after_widget_edit(client, auth_headers):
+async def test_live_placement_tracks_current_revision_after_widget_edit(client, auth_headers):
     deck = await _new_deck(client, auth_headers, "Session revision")
     slide_id = deck["slides"][0]["id"]
     widget = await _create_widget(
@@ -106,20 +106,53 @@ async def test_live_placement_uses_original_revision_after_widget_edit(client, a
         headers=auth_headers,
     )
     assert attach.status_code == 201, attach.text
-
     original_revision_id = widget["current_revision_id"]
+
     patch = await client.patch(
         f"/api/v1/widgets/{widget['id']}",
         json={"html": "<p>v2</p>"},
         headers=auth_headers,
     )
     assert patch.status_code == 200, patch.text
+    updated_revision_id = patch.json()["current_revision_id"]
+
+    # Simulate placements that were already stale before the live-sync fix.
+    from slaides.db.base import get_session_factory
+    from slaides.db import models as _m
+    from sqlalchemy import update as _update
+
+    factory = get_session_factory()
+    async with factory() as db:
+        await db.execute(
+            _update(_m.SlideWidget)
+            .where(_m.SlideWidget.placement_id == "live-1")
+            .values(revision_id=uuid.UUID(original_revision_id))
+        )
+        await db.commit()
 
     deck_after = await client.get(f"/api/v1/decks/{deck['id']}", headers=auth_headers)
     assert deck_after.status_code == 200, deck_after.text
     placement = deck_after.json()["slides"][0]["widgets"][0]
-    assert placement["revision_id"] == original_revision_id
-    assert placement["revision"]["html"] == "<p>v1</p>"
+    assert placement["revision_id"] == updated_revision_id
+    assert placement["revision"]["html"] == "<p>v2</p>"
+
+    session = (
+        await client.post("/api/v1/sessions", json={"deck_id": deck["id"]}, headers=auth_headers)
+    ).json()
+    guest = await client.post(
+        "/api/v1/auth/guest",
+        json={"code": session["code"], "email": "audience@example.com", "anonymous": True},
+    )
+    assert guest.status_code == 200, guest.text
+    guest_headers = {"Authorization": f"Bearer {guest.json()['token']}"}
+    audience = await client.get(
+        f"/api/v1/sessions/{session['id']}/audience",
+        headers=guest_headers,
+    )
+    assert audience.status_code == 200, audience.text
+    live_placement = audience.json()["slides"][0]["widgets"][0]
+    assert live_placement["revision_id"] == updated_revision_id
+    assert live_placement["revision"]["html"] == "<p>v2</p>"
 
 
 async def test_placement_state_tally_round_trip(client, auth_headers, app_with_db):

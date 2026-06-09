@@ -6,6 +6,7 @@ from dataclasses import dataclass
 
 from sqlalchemy import delete, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import aliased
 
 from ..db.models import (
     Deck,
@@ -389,35 +390,39 @@ async def load_widget_placements(
     """Return slide_id -> list of widget placement dicts, ordered by position."""
     if not slide_ids:
         return {}
+    placement_revision = aliased(WidgetRevision)
+    current_revision = aliased(WidgetRevision)
     result = await session.execute(
-        select(SlideWidget, Widget, WidgetRevision)
+        select(SlideWidget, Widget, placement_revision, current_revision)
         .join(Widget, Widget.id == SlideWidget.widget_id)
-        .outerjoin(WidgetRevision, WidgetRevision.id == SlideWidget.revision_id)
+        .outerjoin(placement_revision, placement_revision.id == SlideWidget.revision_id)
+        .outerjoin(current_revision, current_revision.id == Widget.current_revision_id)
         .where(SlideWidget.slide_id.in_(slide_ids))
         .order_by(SlideWidget.position)
     )
     out: dict[uuid.UUID, list[dict]] = {}
-    for link, widget, revision in result.all():
+    for link, widget, placement_rev, current_rev in result.all():
+        render_revision = current_rev or placement_rev
         out.setdefault(link.slide_id, []).append(
             {
                 "placement_id": link.placement_id,
                 "widget_id": widget.id,
-                "revision_id": link.revision_id,
+                "revision_id": render_revision.id if render_revision is not None else link.revision_id,
                 "revision": (
                     {
-                        "id": revision.id,
-                        "widget_id": revision.widget_id,
-                        "version_number": revision.version_number,
-                        "html": revision.html or "",
-                        "js": revision.js,
-                        "css": revision.css,
-                        "props_schema": revision.props_schema or {},
-                        "example_props": revision.example_props or {},
-                        "behavior": revision.behavior or {"kind": "quiet"},
-                        "ai_spec": revision.ai_spec or {},
-                        "created_reason": revision.created_reason,
+                        "id": render_revision.id,
+                        "widget_id": render_revision.widget_id,
+                        "version_number": render_revision.version_number,
+                        "html": render_revision.html or "",
+                        "js": render_revision.js,
+                        "css": render_revision.css,
+                        "props_schema": render_revision.props_schema or {},
+                        "example_props": render_revision.example_props or {},
+                        "behavior": render_revision.behavior or {"kind": "quiet"},
+                        "ai_spec": render_revision.ai_spec or {},
+                        "created_reason": render_revision.created_reason,
                     }
-                    if revision is not None
+                    if render_revision is not None
                     else None
                 ),
                 "kind": widget.kind,
